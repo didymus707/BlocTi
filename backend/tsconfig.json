@@ -42,5 +42,7 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "moduleResolution": "nodenext"
-  }
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "prisma", "prisma.config.ts"]
 }
