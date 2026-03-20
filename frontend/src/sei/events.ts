@@ -6,7 +6,7 @@ export type BlockId = Brand<string, "BlockId">;
 export type EventId = Brand<string, "EventId">;
 export type SessionId = Brand<string, "SessionId">;
 
-interface BaseEvent {
+export interface BaseEvent {
   seq: number;
   type: string;
   userId: UserId;
@@ -16,7 +16,7 @@ interface BaseEvent {
   sessionId: SessionId;
 }
 
-interface TaskSnapshot {
+export interface TaskSnapshot {
   taskId: TaskId;
   title: string;
   plannedDuration: number; // in seconds
@@ -89,8 +89,14 @@ interface SessionTerminated extends BaseEvent {
   reason: "user_exit" | "completed" | "interrupted";
 }
 
-export type TaskEvent = TaskStarted | TaskPaused | TaskCompleted  | TaskResumed | TaskSkipped | TaskSwitched;
+export type TaskEvent =
+  | TaskStarted
+  | TaskPaused
+  | TaskCompleted
+  | TaskResumed
+  | TaskSkipped
+  | TaskSwitched;
 
 export type SeiEvent = BlockEvent | TaskEvent;
 
-export type SessionEvent = SessionTerminated
+export type SessionEvent = SessionTerminated;
