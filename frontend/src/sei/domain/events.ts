@@ -1,10 +1,4 @@
-type Brand<K, T> = K & { __brand: T };
-
-export type TaskId = Brand<string, "TaskId">;
-export type UserId = Brand<string, "UserId">;
-export type BlockId = Brand<string, "BlockId">;
-export type EventId = Brand<string, "EventId">;
-export type SessionId = Brand<string, "SessionId">;
+import type { BlockId, EventId, SessionId, TaskId, UserId } from "./ids";
 
 export interface BaseEvent {
   seq: number;
