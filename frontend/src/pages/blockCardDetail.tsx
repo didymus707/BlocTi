@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useBlock, useBlockUI } from "../context/blockContext";
 import { Card } from "../components/primitives/card";
 import Button from "../components/primitives/button";
 import { useNavigate, useParams } from "react-router";
@@ -7,9 +6,18 @@ import { Clock } from "../components/primitives/icons";
 import { TaskModal } from "../components/modals/task";
 import { useSession } from "../context/sessionContext";
 import { FocusMode } from "../components/blocks/FocusMode";
+import { useBlock, useBlockUI } from "../context/blockContext";
 import { TimeProgress } from "../components/blocks/timeProgress";
 import { SessionControl } from "../components/blocks/sessionControl";
 import { useDerivedTime } from "../components/hooks/useDerivedTime";
+import {
+  DEV_USER_ID,
+  type BlockId,
+  type EventId,
+  type SeiEvent,
+  type SessionId,
+} from "../sei/events";
+import { appendEvent } from "../sei/append";
 
 export const CardDetails = () => {
   const navigate = useNavigate();
@@ -31,6 +39,7 @@ export const CardDetails = () => {
     terminateSession,
     sessionTime: { elapsed, remaining, progress },
   } = useSession();
+  const [seiEvents, setSeiEvents] = useState<SeiEvent[]>([]);
 
   const block = blocks.find((b) => b.id === id);
   const { elapsed: sessionElapsed } = useDerivedTime(block ? block : []);
@@ -48,8 +57,19 @@ export const CardDetails = () => {
   const hasPausedTask = isSameBlock && activeTask && block.status === "paused";
 
   const handleStartSession = () => {
+    const newSessionId = crypto.randomUUID() as SessionId;
+    const startEventId = crypto.randomUUID() as EventId;
     // Fresh start case
     start(block);
+    setSeiEvents((prev) =>
+      appendEvent(prev, {
+        type: "BlockStarted",
+        blockId: block.id as BlockId,
+        userId: DEV_USER_ID,
+        eventId: startEventId,
+        sessionId: newSessionId,
+      }),
+    );
   };
 
   const resumeSession = () => {

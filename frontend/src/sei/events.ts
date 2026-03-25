@@ -35,6 +35,7 @@ export interface BlockStarted extends BaseEvent {
 
 export interface BlockPaused extends BaseEvent {
   type: "BlockPaused";
+  reason?: string; // optional user note
 }
 export interface BlockResumed extends BaseEvent {
   type: "BlockResumed";
@@ -61,6 +62,7 @@ interface TaskStarted extends BaseEvent {
 interface TaskPaused extends BaseEvent {
   type: "TaskPaused";
   taskId: TaskId;
+  reason?: string; // optional user note
 }
 
 interface TaskResumed extends BaseEvent {
@@ -100,3 +102,5 @@ export type TaskEvent =
 export type SeiEvent = BlockEvent | TaskEvent;
 
 export type SessionEvent = SessionTerminated;
+
+export const DEV_USER_ID = "dev-user" as UserId;

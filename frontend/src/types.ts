@@ -1,4 +1,4 @@
-export type Status = "idle" | "running" | "paused" | "completed";
+import type { BlockId, SessionId, TaskId, UserId } from "./sei/events";
 
 export interface PauseEvent {
   pausedAt: number;
@@ -6,32 +6,61 @@ export interface PauseEvent {
   reason?: string; // optional user note
 }
 
-export interface Block {
-  id: string;
+// PLAN
+
+export interface BlockPlan {
+  id: BlockId;
   name: string;
-  tasks: Task[];
-  status: Status;
-  // timeTracking
-  actualDuration: number;
-  plannedDuration: number;
-  // precise tracking
-  startedAt?: number;
-  completedAt?: number;
-  pauses: PauseEvent[];
+  userId: UserId;
+  taskIds: TaskId[];
   createdAt: string;
-  activeTaskId?: string | null;
+  plannedDuration: number; // in seconds
 }
 
-export interface Task {
-  id: string;
+export interface TaskPlan {
+  id: TaskId;
   name: string;
-  blockId: string;
-  elapsed: number;
-  progress: number;
-  duration: number;
-  remaining: number;
-  completed: boolean;
+  blockId: BlockId;
+  order: number;
+  plannedDuration: number; // in seconds
 }
+
+// EXECUTION PROJECTION
+export type ExecutionStatus =
+  | "idle"
+  | "running"
+  | "paused"
+  | "completed"
+  | "terminated";
+
+  export interface TaskExecutionState {
+    taskId: TaskId;
+    status: "pending" | "running" | "paused" | "completed" | "skipped";
+    elapsedSec: number;
+    remainingSec: number;
+    progress: number;
+  }
+
+  export interface BlockExecutionProjection {
+    blockId: BlockId;
+    sessionId: SessionId | null;
+    status: ExecutionStatus;
+    activeTaskId: TaskId | null;
+    startedAt: string | null;
+    completedAt: string | null;
+    taskStates: Record<TaskId, TaskExecutionState>;
+  }
+
+  // Execution Metrics
+  export interface ExecutionMetrics {
+    plannedFocusTimeSec: number;
+    actualFocusTimeSec: number;
+    pauseTimeSec: number;
+    completedTasks: number;
+    skippedTasks: number;
+    executionDriftSec: number; // actual - planned
+    executionFidelity: number; // ratio of completed to planned tasks
+  }
 
 export type Action =
   | { type: "ADD_BLOCK"; payload: Block }
