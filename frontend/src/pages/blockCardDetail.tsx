@@ -10,14 +10,9 @@ import { useBlock, useBlockUI } from "../context/blockContext";
 import { TimeProgress } from "../components/blocks/timeProgress";
 import { SessionControl } from "../components/blocks/sessionControl";
 import { useDerivedTime } from "../components/hooks/useDerivedTime";
-import {
-  DEV_USER_ID,
-  type BlockId,
-  type EventId,
-  type SeiEvent,
-  type SessionId,
-} from "../sei/events";
-import { appendEvent } from "../sei/append";
+import { DEV_USER_ID, type SeiEvent } from "../sei/domain/events";
+import type { BlockId, EventId, SessionId } from "../sei/domain/ids";
+import { appendEvent } from "../sei/domain/append";
 
 export const CardDetails = () => {
   const navigate = useNavigate();
