@@ -1,8 +1,9 @@
-import type { Command } from "./sei/domain/commands";
+import type { ExecutionCommand } from "./sei/domain/command/executionCommand";
+import type { PlanCommand } from "./sei/domain/command/planCommands";
 import type { SeiEvent } from "./sei/domain/events";
 import type { BlockId, TaskId } from "./sei/domain/ids";
-import type { BlockPlan, TaskPlan } from "./sei/plan";
-import type { BlockExecutionProjection } from "./sei/projections";
+import type { BlockPlan, TaskPlan } from "./sei/domain/plan";
+import type { BlockExecutionProjection } from "./sei/domain/projection";
 
 export interface PauseEvent {
   pausedAt: number;
@@ -73,7 +74,7 @@ export interface BlockStoreStte {
 }
 export interface SeiBlockContextType {
   state: BlockStoreStte;
-  dispatch: React.Dispatch<Command>;
+  dispatch: React.Dispatch<PlanCommand | ExecutionCommand>;
 }
 
 export interface BlockUIContextType {
