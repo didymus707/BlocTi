@@ -62,8 +62,39 @@ export function projectBlock(
       {} as Record<TaskId, TaskExecutionState>,
     ),
   };
-  if (events.length === 0) {
-    return initialState;
+  let state = { ...initialState };
+  const orderedEvents = [...events].sort((a, b) => a.seq - b.seq);
+
+  for (const event of orderedEvents) {
+    switch (event.type) {
+      case "BlockStarted": {
+        state = {
+          ...state,
+          sessionId: event.sessionId,
+          status: "running",
+          startedAt: event.occurredAt,
+        };
+        break;
+      }
+      case "TaskStarted": {
+        state = {
+          ...state,
+          activeTaskId: event.taskId,
+          status: "running",
+          isPaused: false,
+          taskStates: {
+            ...state.taskStates,
+            [event.taskId]: {
+              ...state.taskStates[event.taskId],
+              status: "running",
+            },
+          }
+        };
+        break;
+      }
+      default:
+        break;
+    }
   }
-  throw new Error("Not implemented");
+  return state;
 }
