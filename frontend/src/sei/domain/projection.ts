@@ -34,7 +34,7 @@ export function projectBlock(
   block: BlockPlan,
   tasks: TaskPlan[],
   events: SeiEvent[],
-  now: string = new Date().toISOString(),
+  // now: string = new Date().toISOString(),
 ): BlockExecutionProjection {
   const blockTasks = tasks
     .filter((t) => t.blockId === block.id)
@@ -88,7 +88,99 @@ export function projectBlock(
               ...state.taskStates[event.taskId],
               status: "running",
             },
-          }
+          },
+        };
+        break;
+      }
+      case "TaskPaused": {
+        state = {
+          ...state,
+          status: "paused",
+          isPaused: true,
+          taskStates: {
+            ...state.taskStates,
+            [event.taskId]: {
+              ...state.taskStates[event.taskId],
+              status: "paused",
+            },
+          },
+        };
+        break;
+      }
+      case "TaskResumed": {
+        state = {
+          ...state,
+          status: "running",
+          isPaused: false,
+          taskStates: {
+            ...state.taskStates,
+            [event.taskId]: {
+              ...state.taskStates[event.taskId],
+              status: "running",
+            },
+          },
+        };
+        break;
+      }
+      case "TaskCompleted": {
+        const task = blockTasks.find((t) => t.id === event.taskId);
+
+        if (!task) break;
+
+        state = {
+          ...state,
+          activeTaskId: null,
+          isPaused: false,
+          taskStates: {
+            ...state.taskStates,
+            [event.taskId]: {
+              ...state.taskStates[event.taskId],
+              status: "completed",
+              elapsedSec: task.plannedDuration,
+              remainingSec: 0,
+              progress: 100,
+            },
+          },
+        };
+        break;
+      }
+      case "TaskSwitched": {
+        state = {
+          ...state,
+          activeTaskId: event.toTaskId,
+          status: "running",
+          isPaused: false,
+          taskStates: {
+            ...state.taskStates,
+            [event.fromTaskId]: {
+              ...state.taskStates[event.fromTaskId],
+              status: "pending",
+            },
+            [event.toTaskId]: {
+              ...state.taskStates[event.toTaskId],
+              status: "running",
+            },
+          },
+        };
+        break;
+      }
+      case "BlockCompleted": {
+        state = {
+          ...state,
+          activeTaskId: null,
+          status: "completed",
+          isPaused: false,
+          completedAt: event.occurredAt,
+        };
+        break;
+      }
+      case "SessionTerminated": {
+        state = {
+          ...state,
+          activeTaskId: null,
+          status: "terminated",
+          isPaused: false,
+          terminatedAt: event.occurredAt,
         };
         break;
       }
