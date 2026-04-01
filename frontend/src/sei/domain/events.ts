@@ -29,11 +29,10 @@ export interface BlockStarted extends BaseEvent {
 
 export interface BlockPaused extends BaseEvent {
   type: "BlockPaused";
-  reason?: string; // optional user note
 }
 export interface BlockResumed extends BaseEvent {
   type: "BlockResumed";
-  reason?: string;
+  reason?: string; // optional user note
 }
 
 export interface BlockCompleted extends BaseEvent {
@@ -93,8 +92,15 @@ export type TaskEvent =
   | TaskSkipped
   | TaskSwitched;
 
-export type SeiEvent = BlockEvent | TaskEvent;
-
-export type SessionEvent = SessionTerminated;
-
+  export type SessionEvent = SessionTerminated;
+  
+  export type SeiEvent = BlockEvent | TaskEvent | SessionEvent;
+  
 export const DEV_USER_ID = "dev-user" as UserId;
+
+
+// focusTimeSec = sum of running intervals
+// wallClockSec = completedAt - firstStartedAt
+// pauseTimeSec = wallClockSec - focusTimeSec
+// focusVarianceSec = focusTimeSec - plannedDurationSec
+// executionDriftSec = wallClockSec - plannedDurationSec
