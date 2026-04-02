@@ -187,6 +187,28 @@ export function projectBlock(
         break;
       }
       case "TaskSwitched": {
+        const fromTask = blockTasks.find((t) => t.id === event.fromTaskId);
+        const currentFromTaskState = state.taskStates[event.fromTaskId];
+        const currentToTaskState = state.taskStates[event.toTaskId];
+
+        if (!currentFromTaskState || !fromTask || !currentToTaskState) break;
+        
+        let nextElapsed = currentFromTaskState.elapsedSec;
+        if (currentStartTime) {
+          const deltaSec = deltaSecHelper(event.occurredAt, currentStartTime);
+          nextElapsed = deltaSec + currentFromTaskState.elapsedSec;
+        }
+
+        const nextRemainingSec = Math.max(
+          0,
+          fromTask.plannedDuration - nextElapsed,
+        );
+        const nextProgress = Math.min(
+          100,
+          (nextElapsed / fromTask.plannedDuration) * 100,
+        );
+
+        currentStartTime = event.occurredAt;
         state = {
           ...state,
           activeTaskId: event.toTaskId,
@@ -195,8 +217,11 @@ export function projectBlock(
           taskStates: {
             ...state.taskStates,
             [event.fromTaskId]: {
-              ...state.taskStates[event.fromTaskId],
+              ...currentFromTaskState,
               status: "pending",
+              elapsedSec: nextElapsed,
+              remainingSec: nextRemainingSec,
+              progress: nextProgress,
             },
             [event.toTaskId]: {
               ...state.taskStates[event.toTaskId],
@@ -240,9 +265,10 @@ export function projectBlock(
     const activeTaskId = state.activeTaskId;
     const task = blockTasks.find((t) => t.id === activeTaskId);
     const currentTaskState = state.taskStates[activeTaskId];
-    if (task) {
+
+    if (task && currentTaskState) {
       const deltaSec = deltaSecHelper(now, currentStartTime);
-      const nextElapsed = deltaSec + state.taskStates[task.id].elapsedSec;
+      const nextElapsed = deltaSec + currentTaskState.elapsedSec;
       const remainingSec = Math.max(0, task.plannedDuration - nextElapsed);
       const nextProgress = Math.min(
         100,
