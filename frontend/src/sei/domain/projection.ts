@@ -224,7 +224,7 @@ export function projectBlock(
               progress: nextProgress,
             },
             [event.toTaskId]: {
-              ...state.taskStates[event.toTaskId],
+              ...currentToTaskState,
               status: "running",
             },
           },
@@ -269,7 +269,7 @@ export function projectBlock(
     if (task && currentTaskState) {
       const deltaSec = deltaSecHelper(now, currentStartTime);
       const nextElapsed = deltaSec + currentTaskState.elapsedSec;
-      const remainingSec = Math.max(0, task.plannedDuration - nextElapsed);
+      const nextRemaining = Math.max(0, task.plannedDuration - nextElapsed);
       const nextProgress = Math.min(
         100,
         (nextElapsed / task.plannedDuration) * 100,
@@ -282,7 +282,7 @@ export function projectBlock(
           [activeTaskId]: {
             ...currentTaskState,
             elapsedSec: nextElapsed,
-            remainingSec: remainingSec,
+            remainingSec: nextRemaining,
             progress: nextProgress,
           },
         },
