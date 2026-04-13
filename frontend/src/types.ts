@@ -1,4 +1,9 @@
-import type { BlockId, SessionId, TaskId, UserId } from "./sei/events";
+import type { ExecutionCommand } from "./sei/domain/command/executionCommand";
+import type { PlanCommand } from "./sei/domain/command/planCommands";
+import type { SeiEvent } from "./sei/domain/events";
+import type { BlockId, TaskId } from "./sei/domain/ids";
+import type { BlockPlan, TaskPlan } from "./sei/domain/plan";
+import type { BlockExecutionProjection } from "./sei/domain/projection";
 
 export interface PauseEvent {
   pausedAt: number;
@@ -6,61 +11,34 @@ export interface PauseEvent {
   reason?: string; // optional user note
 }
 
-// PLAN
+export type Status = "idle" | "running" | "paused" | "completed";
 
-export interface BlockPlan {
-  id: BlockId;
+export interface Block {
+  id: string;
   name: string;
-  userId: UserId;
-  taskIds: TaskId[];
+  tasks: Task[];
+  status: Status;
+  // timeTracking
+  actualDuration: number;
+  plannedDuration: number;
+  // precise tracking
+  startedAt?: number;
+  completedAt?: number;
+  pauses: PauseEvent[];
   createdAt: string;
-  plannedDuration: number; // in seconds
+  activeTaskId?: string | null;
 }
 
-export interface TaskPlan {
-  id: TaskId;
+export interface Task {
+  id: string;
   name: string;
-  blockId: BlockId;
-  order: number;
-  plannedDuration: number; // in seconds
+  blockId: string;
+  elapsed: number;
+  progress: number;
+  duration: number;
+  remaining: number;
+  completed: boolean;
 }
-
-// EXECUTION PROJECTION
-export type ExecutionStatus =
-  | "idle"
-  | "running"
-  | "paused"
-  | "completed"
-  | "terminated";
-
-  export interface TaskExecutionState {
-    taskId: TaskId;
-    status: "pending" | "running" | "paused" | "completed" | "skipped";
-    elapsedSec: number;
-    remainingSec: number;
-    progress: number;
-  }
-
-  export interface BlockExecutionProjection {
-    blockId: BlockId;
-    sessionId: SessionId | null;
-    status: ExecutionStatus;
-    activeTaskId: TaskId | null;
-    startedAt: string | null;
-    completedAt: string | null;
-    taskStates: Record<TaskId, TaskExecutionState>;
-  }
-
-  // Execution Metrics
-  export interface ExecutionMetrics {
-    plannedFocusTimeSec: number;
-    actualFocusTimeSec: number;
-    pauseTimeSec: number;
-    completedTasks: number;
-    skippedTasks: number;
-    executionDriftSec: number; // actual - planned
-    executionFidelity: number; // ratio of completed to planned tasks
-  }
 
 export type Action =
   | { type: "ADD_BLOCK"; payload: Block }
@@ -89,6 +67,16 @@ export interface BlockContextType {
   dispatch: React.Dispatch<Action>;
 }
 
+export interface BlockStoreStte {
+  blockPlans: BlockPlan[];
+  taskPlans: TaskPlan[];
+  events: SeiEvent[];
+}
+export interface SeiBlockContextType {
+  state: BlockStoreStte;
+  dispatch: React.Dispatch<PlanCommand | ExecutionCommand>;
+}
+
 export interface BlockUIContextType {
   isModalOpen: boolean;
   mode: "create" | "edit";
@@ -108,4 +96,23 @@ export interface SessionContextType {
   resume: (block: Block, taskId: string) => void;
   terminateSession: (options?: { resetBlockStatus?: boolean }) => void;
   sessionTime: { elapsed: number; remaining: number; progress: number };
+}
+
+export interface SeiSessionTimeView {
+  elapsedSec: number;
+  remainingSec: number;
+  progress: number;
+}
+
+export interface SSeiessionContextType {
+  activeBlockId: BlockId | null;
+  activeTaskId: TaskId | null;
+  projection: BlockExecutionProjection | null;
+  sessionTime: SeiSessionTimeView;
+  startBlock: (blockId: BlockId) => void;
+  pauseActiveTask: (reason?: string) => void;
+  resumeActiveTask: () => void;
+  completeActiveTask: () => void;
+  skipTask: (taskId: TaskId) => void;
+  terminateSession: (reason?: "manual_stop" | "abandoned") => void;
 }

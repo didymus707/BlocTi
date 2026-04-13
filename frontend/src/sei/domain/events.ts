@@ -1,10 +1,4 @@
-type Brand<K, T> = K & { __brand: T };
-
-export type TaskId = Brand<string, "TaskId">;
-export type UserId = Brand<string, "UserId">;
-export type BlockId = Brand<string, "BlockId">;
-export type EventId = Brand<string, "EventId">;
-export type SessionId = Brand<string, "SessionId">;
+import type { BlockId, EventId, SessionId, TaskId, UserId } from "./ids";
 
 export interface BaseEvent {
   seq: number;
@@ -35,11 +29,10 @@ export interface BlockStarted extends BaseEvent {
 
 export interface BlockPaused extends BaseEvent {
   type: "BlockPaused";
-  reason?: string; // optional user note
 }
 export interface BlockResumed extends BaseEvent {
   type: "BlockResumed";
-  reason?: string;
+  reason?: string; // optional user note
 }
 
 export interface BlockCompleted extends BaseEvent {
@@ -99,8 +92,15 @@ export type TaskEvent =
   | TaskSkipped
   | TaskSwitched;
 
-export type SeiEvent = BlockEvent | TaskEvent;
-
-export type SessionEvent = SessionTerminated;
-
+  export type SessionEvent = SessionTerminated;
+  
+  export type SeiEvent = BlockEvent | TaskEvent | SessionEvent;
+  
 export const DEV_USER_ID = "dev-user" as UserId;
+
+
+// focusTimeSec = sum of running intervals
+// wallClockSec = completedAt - firstStartedAt
+// pauseTimeSec = wallClockSec - focusTimeSec
+// focusVarianceSec = focusTimeSec - plannedDurationSec
+// executionDriftSec = wallClockSec - plannedDurationSec

@@ -199,7 +199,7 @@ export const BlockForm: React.FC<BlockFormProps> = ({
             </div>
 
             <div
-              className={`tasks-choice-container flex justify-between items-center ${mode === "edit" ? "hidden" : ""``}`}
+              className={`tasks-choice-container flex justify-between items-center ${mode === "edit" ? "hidden" : ``}`}
             >
               <div className="task-setup">
                 <p className="text-md text-lg font-medium">Task Setup</p>
