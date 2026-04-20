@@ -11,32 +11,32 @@ export type ExecutionCommand =
   | {
       type: "PauseTask";
       blockId: BlockId;
-      taskId: TaskId;
+      userId: UserId;
       at: string;
       reason?: string;
     }
   | {
       type: "ResumeTask";
       blockId: BlockId;
-      taskId: TaskId;
+      userId: UserId;
       at: string;
     }
   | {
       type: "CompleteTask";
       blockId: BlockId;
-      taskId: TaskId;
+      userId: UserId;
       at: string;
     }
   | {
       type: "SwitchTask";
       blockId: BlockId;
-      fromTaskId: TaskId;
       toTaskId: TaskId;
       at: string;
     }
   | {
       type: "TerminateSession";
       blockId: BlockId;
+      userId: UserId;
       at: string;
       reason: "manual" | "block_completed" | "task_deleted" | "block_deleted";
     };
