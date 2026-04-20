@@ -79,7 +79,8 @@ export const resolveCommand = (
     }
     case "CompleteTask": {
       const { activeTaskId, sessionId, isPaused } = state;
-      if (status !== "running" || !activeTaskId || !sessionId || isPaused) return [];
+      if (status !== "running" || !activeTaskId || !sessionId || isPaused)
+        return [];
       const results: CommandResult[] = [
         {
           type: "TaskCompleted",
@@ -96,14 +97,13 @@ export const resolveCommand = (
 
       if (nextTask) {
         results.push({
-          type: "TaskSwitched",
-          fromTaskId: activeTaskId,
-          toTaskId: nextTask.id,
+          type: "TaskStarted",
+          taskId: nextTask.id,
           userId: command.userId,
           blockId: block.id,
           sessionId,
           occurredAt: command.at,
-        } as CreateEvent<"TaskSwitched">);
+        } as CreateEvent<"TaskStarted">);
       } else {
         results.push({
           type: "BlockCompleted",
