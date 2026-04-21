@@ -31,6 +31,7 @@ export type ExecutionCommand =
       type: "SwitchTask";
       blockId: BlockId;
       toTaskId: TaskId;
+      userId: UserId;
       at: string;
     }
   | {
