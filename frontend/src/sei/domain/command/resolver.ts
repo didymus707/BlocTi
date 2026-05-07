@@ -8,7 +8,9 @@ export type CreateEvent<T extends SeiEvent["type"]> = Omit<
   "eventId" | "seq"
 >;
 
-type CommandResult = Omit<SeiEvent, "eventId" | "seq">;
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+export type CommandResult = DistributiveOmit<SeiEvent, "eventId" | "seq">;
 
 export const resolveCommand = (
   block: BlockPlan,
