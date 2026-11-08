@@ -1,15 +1,31 @@
+import type { CommandResult } from "./command/resolver";
 import type { SeiEvent } from "./events";
+import type { EventId } from "./ids";
+
+type MaterializedEvent<T extends CommandResult> = T & {
+  eventId: EventId;
+  seq: number;
+};
+
+const materializeEvent = <T extends CommandResult>(
+  event: T,
+  seq: number,
+): MaterializedEvent<T> => ({
+  ...event,
+  eventId: crypto.randomUUID() as EventId,
+  seq,
+});
 
 // create an event helper that inserts a new event into an event stream
-export const appendEvent = <T extends SeiEvent>(
-  events: SeiEvent[],
-  newEvent: Omit<T, "seq" | "occurredAt">,
+export const appendEvents = (
+  existingEvents: SeiEvent[],
+  newEvents: CommandResult[],
 ): SeiEvent[] => {
-  const nextSeq = events.length === 0 ? 1 : events[events.length - 1].seq + 1;
-  const event = {
-    ...newEvent,
-    seq: nextSeq,
-    occurredAt: new Date().toISOString(),
-  } as T;
-  return [...events, event];
+  const lastSeq = existingEvents.length
+    ? existingEvents[existingEvents.length - 1].seq
+    : -1;
+
+  return newEvents.map((event, index) =>
+    materializeEvent(event, lastSeq + index + 1),
+  );
 };

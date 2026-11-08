@@ -47,39 +47,39 @@ export type BlockEvent =
   | BlockCompleted;
 
 // TaskPlannedEvent
-interface TaskStarted extends BaseEvent {
+export interface TaskStarted extends BaseEvent {
   type: "TaskStarted";
   taskId: TaskId;
 }
 
-interface TaskPaused extends BaseEvent {
+export interface TaskPaused extends BaseEvent {
   type: "TaskPaused";
   taskId: TaskId;
   reason?: string; // optional user note
 }
 
-interface TaskResumed extends BaseEvent {
+export interface TaskResumed extends BaseEvent {
   type: "TaskResumed";
   taskId: TaskId;
 }
 
-interface TaskCompleted extends BaseEvent {
+export interface TaskCompleted extends BaseEvent {
   type: "TaskCompleted";
   taskId: TaskId;
 }
 
-interface TaskSkipped extends BaseEvent {
+export interface TaskSkipped extends BaseEvent {
   type: "TaskSkipped";
   taskId: TaskId;
 }
 
-interface TaskSwitched extends BaseEvent {
+export interface TaskSwitched extends BaseEvent {
   type: "TaskSwitched";
   fromTaskId: TaskId;
   toTaskId: TaskId;
 }
 
-interface SessionTerminated extends BaseEvent {
+export interface SessionTerminated extends BaseEvent {
   type: "SessionTerminated";
   reason: "user_exit" | "completed" | "interrupted";
 }
@@ -92,12 +92,11 @@ export type TaskEvent =
   | TaskSkipped
   | TaskSwitched;
 
-  export type SessionEvent = SessionTerminated;
-  
-  export type SeiEvent = BlockEvent | TaskEvent | SessionEvent;
-  
-export const DEV_USER_ID = "dev-user" as UserId;
+export type SessionEvent = SessionTerminated;
 
+export type SeiEvent = BlockEvent | TaskEvent | SessionEvent;
+
+export const DEV_USER_ID = "dev-user" as UserId;
 
 // focusTimeSec = sum of running intervals
 // wallClockSec = completedAt - firstStartedAt
