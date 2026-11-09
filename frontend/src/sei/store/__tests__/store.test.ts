@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SeiEvent } from "../../domain/events";
 import type { BlockId } from "../../domain/ids";
 import {
@@ -23,7 +23,11 @@ import {
   rollbackEvents,
   type Op,
 } from "../ops";
-import { createLocalPersistence } from "../persistence";
+import {
+  createHttpPersistence,
+  createLocalPersistence,
+  PersistenceError,
+} from "../persistence";
 import { duplicatePlan, draftFromPlan, planFromDraft } from "../planDraft";
 
 const withPlan = applyOp(EMPTY_STATE, { kind: "savePlan", id: "op-1", block: PLAN, tasks: PLAN_TASKS });
@@ -130,6 +134,59 @@ describe("local persistence", () => {
   it("survives corrupt storage", async () => {
     localStorage.setItem("blocti:sei:v1", "{not json");
     expect(await createLocalPersistence().load()).toEqual(EMPTY_STATE);
+  });
+});
+
+describe("http persistence", () => {
+  const json = (status: number, body: unknown) =>
+    new Response(status === 204 ? null : JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  it("sends the idempotency key and drops seq when appending", async () => {
+    const fetchMock = vi.fn(async () => json(201, { events: [] }));
+    const p = createHttpPersistence("http://api", fetchMock as unknown as typeof fetch);
+    await p.appendEvents({ idempotencyKey: "key-1", blockId: BLOCK, events: sequence(...started(0)) });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://api/events");
+    expect((init.headers as Record<string, string>)["Idempotency-Key"]).toBe("key-1");
+    const body = JSON.parse(init.body as string);
+    expect(body.events).toHaveLength(3);
+    expect(body.events[0]).not.toHaveProperty("seq");
+  });
+
+  it("loads plans and events in one go", async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith("/blocks")
+        ? json(200, { blocks: [PLAN], tasks: PLAN_TASKS })
+        : json(200, { events: sequence(...started(0)) }),
+    );
+    const p = createHttpPersistence("http://api", fetchMock as unknown as typeof fetch);
+    const state = await p.load();
+    expect(state.blockPlans).toEqual([PLAN]);
+    expect(state.events).toHaveLength(3);
+  });
+
+  it("classifies network failures and 5xx as retryable, 4xx as final", async () => {
+    const failing = (impl: () => Promise<Response>) =>
+      createHttpPersistence("http://api", impl as unknown as typeof fetch);
+
+    const network = await failing(async () => {
+      throw new TypeError("fetch failed");
+    })
+      .load()
+      .catch((e) => e);
+    expect(network).toBeInstanceOf(PersistenceError);
+    expect(network.retryable).toBe(true);
+
+    const server = await failing(async () => json(503, { error: "down" })).load().catch((e) => e);
+    expect(server).toMatchObject({ retryable: true, status: 503, message: "down" });
+
+    const invalid = await failing(async () => json(422, { error: "clock skew" }))
+      .deleteBlock(BLOCK)
+      .catch((e) => e);
+    expect(invalid).toMatchObject({ retryable: false, status: 422, message: "clock skew" });
   });
 });
 

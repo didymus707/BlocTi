@@ -72,3 +72,64 @@ export const createLocalPersistence = (
     },
   };
 };
+
+// HTTP: the backend in /backend. The server assigns seq and validates time.
+export const createHttpPersistence = (
+  baseUrl: string,
+  fetchImpl: typeof fetch = (...args) => fetch(...args),
+): SeiPersistence => {
+  const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
+    let response: Response;
+    try {
+      response = await fetchImpl(`${baseUrl}${path}`, {
+        ...init,
+        headers: { "Content-Type": "application/json", ...init.headers },
+      });
+    } catch (error) {
+      throw new PersistenceError(
+        `Network error: ${(error as Error).message}`,
+        true,
+      );
+    }
+    if (!response.ok) {
+      let message = `${response.status} ${response.statusText}`;
+      try {
+        const body = (await response.json()) as { error?: string };
+        if (body.error) message = body.error;
+      } catch {
+        // keep the status text
+      }
+      throw new PersistenceError(message, response.status >= 500 || response.status === 429, response.status);
+    }
+    return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+  };
+
+  return {
+    kind: "http",
+    load: async () => {
+      const [plans, stream] = await Promise.all([
+        request<{ blocks: BlockPlan[]; tasks: TaskPlan[] }>("/blocks"),
+        request<{ events: SeiEvent[] }>("/events"),
+      ]);
+      return { blockPlans: plans.blocks, taskPlans: plans.tasks, events: stream.events };
+    },
+    savePlan: async (block, tasks) => {
+      await request(`/blocks/${encodeURIComponent(block.id)}`, {
+        method: "PUT",
+        body: JSON.stringify({ block, tasks }),
+      });
+    },
+    deleteBlock: async (blockId) => {
+      await request(`/blocks/${encodeURIComponent(blockId)}`, { method: "DELETE" });
+    },
+    appendEvents: async ({ idempotencyKey, events }) => {
+      const body = await request<{ events: SeiEvent[] }>("/events", {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        // seq is the server's to assign
+        body: JSON.stringify({ events: events.map(({ seq: _seq, ...e }) => e) }),
+      });
+      return body.events;
+    },
+  };
+};
