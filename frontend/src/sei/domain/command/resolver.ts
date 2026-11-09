@@ -18,7 +18,8 @@ export const resolveCommand = (
   events: SeiEvent[],
   command: ExecutionCommand,
 ): CommandResult[] => {
-  const state = projectBlock(block, tasks, events);
+  // projection is pure now: time comes from the command
+  const state = projectBlock(block, tasks, events, command.at);
   const { status } = state;
   const orderedTasks = tasks
     .filter((task) => block.id === task.blockId)
