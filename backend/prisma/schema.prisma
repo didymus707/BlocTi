@@ -1,21 +1,58 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
-  // output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
 }
 
+// The editable plan. Execution history never reads this table: the
+// projection uses the BlockPlanned snapshots in the event stream.
 model Block {
-  id        String   @id @default(uuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id
+  userId          String   @default("dev-user")
+  name            String
+  plannedDuration Int      @default(0) // seconds
+  tasks           Json     @default("[]") // TaskPlan[] in order
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// One SEI event. Common fields are columns; type-specific fields
+// (taskId, reason, tasks, ...) live in payload.
+model Event {
+  eventId        String   @id
+  blockId        String
+  seq            Int // assigned by the server, per block, from 1
+  type           String
+  userId         String
+  sessionId      String
+  actor          String // human | agent
+  source         String // timer | agent_hook | git | calendar
+  evidence       String // observed | inferred
+  occurredAt     DateTime // when it happened (client claim, checked against server time)
+  recordedAt     DateTime @default(now()) // when the server stored it
+  idempotencyKey String
+  payload        Json     @default("{}")
+
+  @@unique([blockId, seq])
+  @@index([userId, blockId, seq])
+}
+
+// One row per accepted POST /events, so a retried request returns the
+// original result instead of appending again.
+model IdempotencyRecord {
+  key         String   @id // `${userId}:${Idempotency-Key}`
+  userId      String
+  blockId     String
+  requestHash String
+  eventIds    String[]
+  createdAt   DateTime @default(now())
+
+  @@index([blockId])
 }
