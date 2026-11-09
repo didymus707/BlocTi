@@ -1,30 +1,23 @@
 import { useState } from "react";
-import type { Task } from "../../types";
 import { Input } from "../primitives/input";
+import type { DraftTask } from "../../sei/store/planDraft";
 
 interface TaskFormProps {
-  setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
+  setTasks: React.Dispatch<React.SetStateAction<DraftTask[]>>;
 }
 
 const TaskForm: React.FC<TaskFormProps> = ({ setTasks }) => {
   const [taskValue, setTaskValue] = useState<string>("");
-  const [taskDuration, setTaskDuration] = useState<string | undefined>(
-    undefined
-  );
+  const [taskDuration, setTaskDuration] = useState<string>("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!taskValue.trim() || !taskDuration || Number(taskDuration) <= 0) return;
 
-    const newTask: Task = {
+    const newTask: DraftTask = {
       id: crypto.randomUUID(),
-      blockId: "",
-      name: taskValue,
-      completed: false,
-      elapsed: 0,
-      progress: 0,
-      duration: Number(taskDuration),
-      remaining: Number(taskDuration) * 60,
+      name: taskValue.trim(),
+      minutes: Number(taskDuration),
     };
     setTasks((prevTasks) => [...prevTasks, newTask]);
     setTaskValue("");
@@ -44,6 +37,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ setTasks }) => {
                 <Input
                   type="text"
                   id="task"
+                  aria-label="Task name"
                   inputValue={taskValue}
                   setValue={setTaskValue}
                   className={`basis-[65%]`}
@@ -53,10 +47,11 @@ const TaskForm: React.FC<TaskFormProps> = ({ setTasks }) => {
                   min={0}
                   type="number"
                   id="task-in-minutes"
+                  aria-label="Task minutes"
                   placeholder="Minutes"
                   setValue={setTaskDuration}
                   className={`basis-15%`}
-                  inputValue={taskDuration ?? ""}
+                  inputValue={taskDuration}
                 />
                 <button
                   type="button"

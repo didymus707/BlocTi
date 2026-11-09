@@ -1,126 +1,106 @@
 import { useState } from "react";
+import { useNavigate, useParams } from "react-router";
+import { toast } from "react-toastify";
 import { Card } from "../components/primitives/card";
 import Button from "../components/primitives/button";
-import { useNavigate, useParams } from "react-router";
 import { Clock } from "../components/primitives/icons";
 import { TaskModal } from "../components/modals/task";
-import { useSession } from "../context/sessionContext";
 import { FocusMode } from "../components/blocks/FocusMode";
-import { useBlock, useBlockUI } from "../context/blockContext";
 import { TimeProgress } from "../components/blocks/timeProgress";
 import { SessionControl } from "../components/blocks/sessionControl";
-import { useDerivedTime } from "../components/hooks/useDerivedTime";
-import { DEV_USER_ID, type SeiEvent } from "../sei/domain/events";
-import type { BlockId, EventId, SessionId } from "../sei/domain/ids";
-import { appendEvent } from "../sei/domain/append";
+import { MetricsPanel } from "../components/blocks/metricsPanel";
+import { EventTrace } from "../components/blocks/eventTrace";
+import { StatusBadge } from "../components/blocks/statusBadge";
+import { useBlockUI } from "../context/blockUIContext";
+import { useSeiSession } from "../sei/session/seiSessionContext";
+import { useSeiStore } from "../sei/store/seiStoreContext";
+import { duplicatePlan } from "../sei/store/planDraft";
+import {
+  orderedTaskStates,
+  type TaskExecutionState,
+} from "../sei/domain/projection";
+import type { TaskId } from "../sei/domain/ids";
+import { formatClock, formatDuration } from "../utils";
+
+const taskStatusLabel: Record<TaskExecutionState["status"], string> = {
+  pending: "",
+  running: "running",
+  paused: "paused",
+  completed: "done",
+  skipped: "skipped",
+};
 
 export const CardDetails = () => {
   const navigate = useNavigate();
   const goBack = () => navigate(-1);
-  const { blocks, dispatch } = useBlock();
-  const { openEditModal } = useBlockUI();
   const { id } = useParams<{ id: string }>();
+  const { openEditModal } = useBlockUI();
+  const { status: storeStatus, savePlan, deleteBlock, generateId } = useSeiStore();
+  const { getBlock, actionsFor, clock } = useSeiSession();
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState<boolean>(false);
-  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
-  const {
-    activeBlock,
-    start,
-    pause,
-    reset,
-    resume,
-    activeTaskId,
-    activeBlockId,
-    terminateSession,
-    sessionTime: { elapsed, remaining, progress },
-  } = useSession();
-  const [seiEvents, setSeiEvents] = useState<SeiEvent[]>([]);
 
-  const block = blocks.find((b) => b.id === id);
-  const { elapsed: sessionElapsed } = useDerivedTime(block ? block : []);
+  const view = getBlock(id);
 
-  const activeTask = activeBlock
-    ? (activeBlock.tasks.find((t) => !t.completed) ?? null)
-    : null;
-
-  if (!block) {
-    return <div className="p-6 text-gray-600">Block not found.</div>;
+  if (!view) {
+    return (
+      <div className="p-6 text-gray-600">
+        {storeStatus === "loading" ? "Loading…" : "Block not found."}
+      </div>
+    );
   }
 
-  const isActive = block.id === activeBlockId;
-  const isSameBlock = activeBlock?.id === block.id;
-  const hasPausedTask = isSameBlock && activeTask && block.status === "paused";
+  const { block, tasks, projection, metrics, events, capturedByAgent } = view;
+  const actions = actionsFor(block.id);
+  const isLive = projection.status === "running" || projection.status === "paused";
+  const isFinished =
+    projection.status === "completed" || projection.status === "terminated";
+  // blocks recorded by an agent hook are read-only: timer controls would mix
+  // human clicks into an agent trace
+  const readOnly = isFinished || capturedByAgent;
+  const taskStates = orderedTaskStates(projection);
+  const activeTask = projection.activeTaskId
+    ? projection.taskStates[projection.activeTaskId]
+    : null;
 
-  const handleStartSession = () => {
-    const newSessionId = crypto.randomUUID() as SessionId;
-    const startEventId = crypto.randomUUID() as EventId;
-    // Fresh start case
-    start(block);
-    setSeiEvents((prev) =>
-      appendEvent(prev, {
-        type: "BlockStarted",
-        blockId: block.id as BlockId,
-        userId: DEV_USER_ID,
-        eventId: startEventId,
-        sessionId: newSessionId,
-      }),
-    );
+  const warnIfRejected = (events: unknown[], message: string) => {
+    if (events.length === 0) toast.warn(message);
   };
 
-  const resumeSession = () => {
-    if (hasPausedTask && activeBlock && activeTask) {
-      resume(activeBlock, activeTask.id);
-      return;
+  const onTaskClick = (task: TaskExecutionState) => {
+    if (task.status === "completed" || task.status === "skipped") return;
+    if (projection.status === "idle") {
+      warnIfRejected(actions.start(task.taskId), "Could not start this task.");
+    } else if (isLive && task.taskId !== projection.activeTaskId) {
+      warnIfRejected(actions.switchTask(task.taskId), "Could not switch to this task.");
     }
   };
 
-  const setActiveTask = (taskId: string) => {
-    dispatch({
-      type: "SET_ACTIVE_TASK",
-      payload: { blockId: block.id, taskId },
-    });
+  const removeTaskFromPlan = (taskId: TaskId) => {
+    const remaining = tasks.filter((t) => t.id !== taskId);
+    savePlan({ ...block, taskIds: remaining.map((t) => t.id) }, remaining);
+    if (isLive) actions.replan();
   };
 
   const safeDeleteBlock = () => {
-    if (block.status === "running" || block.status === "paused")
-      terminateSession({ resetBlockStatus: false });
-
-    dispatch({ type: "DELETE_BLOCK", payload: { id: block.id } });
+    deleteBlock(block.id);
+    toast("Block deleted");
     navigate("/");
   };
 
-  const safeDeleteTask = (taskId: string) => {
-    const isActiveTask = block.activeTaskId === taskId;
-
-    // MVP safety: if deleting the currently active task while running/paused,
-    // terminate session first so no interval ticks against a missing task.
-    if (
-      isActiveTask &&
-      (block.status === "running" || block.status === "paused")
-    ) {
-      terminateSession?.({ resetBlockStatus: false });
-    }
-
-    dispatch({ type: "DELETE_TASK", payload: { blockId: block.id, taskId } });
+  const runAgain = () => {
+    const copy = duplicatePlan(block, tasks, generateId, clock());
+    savePlan(copy.block, copy.tasks);
+    navigate(`/block/${copy.block.id}`);
   };
 
-  const openTaskModal = (id: string) => {
-    setSelectedBlockId(id);
-    setIsTaskModalOpen(true);
-  };
-
-  const closeTaskModal = () => {
-    setIsTaskModalOpen(false);
-    setSelectedBlockId(null);
-  };
-
-  const plannedDuration = (block.plannedDuration ?? 0) * 60;
-  let sessionProgress =
-    plannedDuration > 0 ? (sessionElapsed / plannedDuration) * 100 : 0;
-  sessionProgress = Math.max(0, Math.min(100, sessionProgress));
-  if (block.status === "completed") sessionProgress = 100;
-
-  const sessionRemainingCap = Math.max(0, plannedDuration - sessionElapsed);
+  const sessionProgress =
+    projection.status === "completed"
+      ? 100
+      : metrics.plannedFocusSec > 0
+        ? (metrics.focusSec / metrics.plannedFocusSec) * 100
+        : 0;
+  const remainingFocus = taskStates.reduce((acc, t) => acc + t.remainingSec, 0);
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -137,21 +117,9 @@ export const CardDetails = () => {
         className="bg-transparent p-6 rounded-2xl border border-gray-200 mb-6"
         headerRight={
           <div className="flex items-center gap-2">
-            <span
-              className={`text-xs font-medium px-2 py-1 rounded-full ${
-                block.status === "running"
-                  ? "bg-green-100 text-green-700"
-                  : block.status === "paused"
-                    ? "bg-yellow-100 text-yellow-700"
-                    : block.status === "completed"
-                      ? "bg-gray-200 text-gray-700"
-                      : "bg-blue-100 text-blue-700"
-              }`}
-            >
-              {block.status}
-            </span>
-
+            <StatusBadge status={projection.status} />
             <button
+              aria-label="Edit block"
               onClick={(e) => {
                 e.stopPropagation();
                 openEditModal(block.id);
@@ -161,6 +129,7 @@ export const CardDetails = () => {
               Edit
             </button>
             <button
+              aria-label="Delete block"
               onClick={(e) => {
                 e.stopPropagation();
                 safeDeleteBlock();
@@ -172,52 +141,53 @@ export const CardDetails = () => {
           </div>
         }
       >
-        {/*  PROGRESS BAR for Session */}
-        {block && (
-          <TimeProgress
-            label="Session Progress"
-            elapsed={sessionElapsed}
-            planned={plannedDuration}
-            remaining={sessionRemainingCap}
-            progress={sessionProgress}
-            variant="session"
-          />
-        )}
+        <TimeProgress
+          label="Session Progress"
+          elapsed={metrics.focusSec}
+          planned={metrics.plannedFocusSec}
+          remaining={remainingFocus}
+          progress={sessionProgress}
+          variant="session"
+        />
 
-        {/* Current Task */}
         <div className="mt-8 border border-gray-200 rounded-lg p-4 bg-gray-50">
-          <div className="flex items-center">
+          <div className="flex items-center gap-4">
             <h3 className="font-medium text-gray-700">Current Task:</h3>
-
-            {activeTask && isActive ? (
-              <span className="text-gray-800 text-md">{activeTask.name}</span>
+            {activeTask ? (
+              <span data-testid="current-task" className="text-gray-800 text-md">
+                {activeTask.title}
+                {projection.isPaused && (
+                  <span className="ml-2 text-xs text-yellow-700">
+                    ({projection.pauseKind === "block" ? "on a break" : "paused"})
+                  </span>
+                )}
+              </span>
             ) : (
-              <span className="text-gray-600 ml-4">No active task</span>
+              <span className="text-gray-600">No active task</span>
             )}
           </div>
 
-          {/* TimeProgress for Task */}
-          {activeTask && isActive && (
+          {activeTask && (
             <TimeProgress
               label="Task Progress"
-              remaining={remaining}
-              planned={activeTask.duration * 60}
-              elapsed={elapsed}
-              progress={progress}
+              remaining={activeTask.remainingSec}
+              planned={activeTask.plannedSec}
+              elapsed={activeTask.elapsedSec}
+              progress={activeTask.progress}
+              overrun={activeTask.overrunSec}
               variant="task"
             />
           )}
         </div>
 
-        {/* Task Queue */}
         <div className="task-queue w-full mx-auto">
           <div className="flex justify-between items-center mb-6 mt-8">
             <h3 className="text-[10px] uppercase tracking-[0.2em] font-medium text-gray-400">
               Task Queue
             </h3>
-            {block.tasks.length > 0 && (
+            {taskStates.length > 0 && !readOnly && (
               <button
-                onClick={() => openTaskModal(block.id)}
+                onClick={() => setIsTaskModalOpen(true)}
                 className="text-[10px] uppercase tracking-widest text-black hover:opacity-60 transition-opacity"
               >
                 + Add
@@ -225,13 +195,11 @@ export const CardDetails = () => {
             )}
           </div>
 
-          {block.tasks.length === 0 ? (
+          {taskStates.length === 0 ? (
             <div className="flex flex-col items-center py-12 border border-dashed border-gray-200 rounded-sm">
-              <p className="text-sm text-gray-400 mb-4">
-                No tasks in the queue.
-              </p>
+              <p className="text-sm text-gray-400 mb-4">No tasks in the queue.</p>
               <Button
-                onClick={() => openTaskModal(block.id)}
+                onClick={() => setIsTaskModalOpen(true)}
                 size="sm"
                 variant="primary"
                 className="text-[10px] uppercase tracking-widest px-6"
@@ -240,82 +208,79 @@ export const CardDetails = () => {
               </Button>
             </div>
           ) : (
-            <ul className="space-y-3">
-              {block.tasks.map((task) => {
-                const isActive = activeTaskId === task.id;
-                const isCompleted = task.completed;
+            <ul aria-label="Task queue" className="space-y-3">
+              {taskStates.map((task) => {
+                const isActive = projection.activeTaskId === task.taskId;
+                const isDone = task.status === "completed" || task.status === "skipped";
+                const touched = task.startedAt !== null || task.status !== "pending";
+                const inPlan = tasks.some((t) => t.id === task.taskId);
 
                 return (
-                  <li key={task.id} className="group">
+                  <li key={task.taskId} className="group flex items-stretch gap-2">
                     <button
-                      onClick={() => {
-                        if (!isCompleted) {
-                          setActiveTask(task.id);
-                          start(block);
-                        }
-                      }}
-                      disabled={isCompleted}
+                      onClick={() => onTaskClick(task)}
+                      disabled={isDone || readOnly}
+                      aria-label={`${task.title} ${taskStatusLabel[task.status]}`.trim()}
                       className={`
-                w-full flex items-center justify-between p-4 rounded-sm transition-all duration-300
-                ${isActive ? "bg-black text-white" : "bg-transparent border border-gray-100 hover:border-black"}
-                ${isCompleted ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}
+                flex-1 flex items-center justify-between p-4 rounded-sm transition-all duration-300
+                ${isActive ? "bg-black text-white" : "bg-transparent text-gray-800 border border-gray-100 hover:border-black"}
+                ${isDone ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}
               `}
                     >
                       <div className="flex items-center gap-3">
-                        {/* Active Indicator Dot */}
                         {isActive && (
                           <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
                         )}
-
                         <span
-                          className={`text-sm font-medium ${isCompleted ? "line-through" : ""}`}
+                          className={`text-sm font-medium ${task.status === "completed" ? "line-through" : ""}`}
                         >
-                          {task.name}
+                          {task.title}
                         </span>
+                        {taskStatusLabel[task.status] && (
+                          <span className="text-[10px] uppercase tracking-widest opacity-60">
+                            {taskStatusLabel[task.status]}
+                          </span>
+                        )}
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`text-[10px] tabular-nums tracking-wider ${
-                            isActive ? "text-gray-300" : "text-gray-400"
-                          }`}
-                        >
-                          {task.duration}m
-                        </span>
+                      <span
+                        className={`text-[10px] tabular-nums tracking-wider ${
+                          isActive ? "text-gray-300" : "text-gray-400"
+                        } ${task.overrunSec > 0 ? "text-red-500" : ""}`}
+                      >
+                        {touched ? `${formatClock(task.elapsedSec)} / ` : ""}
+                        {formatDuration(task.plannedSec)}
+                      </span>
+                    </button>
 
-                        {/* Actions (show on hover) */}
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
+                    {!isDone && !readOnly && (
+                      <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex items-center gap-2">
+                        {isLive && !isActive && (
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // open edit task modal (next step)
-                            }}
+                            onClick={() =>
+                              warnIfRejected(actions.skipTask(task.taskId), "Could not skip this task.")
+                            }
                             className="text-[10px] uppercase tracking-widest hover:opacity-60"
-                            disabled={isCompleted}
                           >
-                            Edit
+                            Skip
                           </button>
-
+                        )}
+                        {!touched && inPlan && (
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              safeDeleteTask(task.id);
-                            }}
+                            onClick={() => removeTaskFromPlan(task.taskId)}
                             className="text-[10px] uppercase tracking-widest hover:opacity-60"
-                            disabled={isCompleted || block.tasks.length === 1}
+                            disabled={taskStates.length === 1}
                             title={
-                              block.tasks.length === 1
-                                ? "You must keep at least 1 task"
-                                : ""
+                              taskStates.length === 1 ? "You must keep at least 1 task" : ""
                             }
                           >
                             Delete
                           </button>
-                        </div>
+                        )}
                       </div>
-                    </button>
+                    )}
                   </li>
                 );
               })}
@@ -323,39 +288,47 @@ export const CardDetails = () => {
           )}
         </div>
 
-        <SessionControl
-          onPause={pause}
-          onReset={reset}
-          status={block.status}
-          onResume={resumeSession}
-          onStart={handleStartSession}
-          hasPausedTask={hasPausedTask}
-        />
+        {capturedByAgent ? (
+          <p className="text-center text-xs text-gray-500 mt-8">
+            Captured automatically by an agent hook. Pauses marked inferred
+            were deduced, not observed.
+          </p>
+        ) : (
+          <SessionControl
+            projection={projection}
+            actions={actions}
+            onRunAgain={runAgain}
+            disabled={storeStatus === "loading"}
+          />
+        )}
 
-        {(activeBlock?.status === "running" ||
-          activeBlock?.status === "paused") && (
+        {isLive && !capturedByAgent && (
           <div className="flex flex-col items-center w-full">
             <button
               onClick={() => setIsFocusMode(true)}
               className="mt-6 px-4 py-2 text-[10px] uppercase tracking-widest text-black bg-transparent hover:bg-gray-50 hover:tracking-[0.3em] transition-all duration-300 ease-in-out"
-              // className="mt-6 px-6 py-2 text-[10px] uppercase tracking-[0.2em] text-black bg-transparent hover:bg-black hover:text-white transition-all duration-300 rounded-full font-medium"
-              // className="relative mt-6 px-2 py-2 text-[10px] uppercase tracking-widest text-black bg-transparent after:content-[''] after:absolute after:bottom-0 after:left-1/2 after:w-0 after:h-[2px] after:bg-black after:transition-all after:duration-300 hover:after:w-full hover:after:left-0"
             >
               Expand to Focus Mode
             </button>
           </div>
         )}
 
-        {isFocusMode && <FocusMode onClose={() => setIsFocusMode(false)} />}
+        <MetricsPanel metrics={metrics} />
+        <EventTrace events={events} projection={projection} />
       </Card>
 
       <TaskModal
-        blockId={selectedBlockId}
+        view={view}
         isOpen={isTaskModalOpen}
-        onClose={closeTaskModal}
+        onClose={() => setIsTaskModalOpen(false)}
+        onPlanChanged={() => {
+          if (isLive) actions.replan();
+        }}
       />
 
-      {isFocusMode && <FocusMode onClose={() => setIsFocusMode(false)} />}
+      {isFocusMode && isLive && (
+        <FocusMode view={view} actions={actions} onClose={() => setIsFocusMode(false)} />
+      )}
     </div>
   );
 };

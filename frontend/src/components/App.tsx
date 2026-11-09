@@ -1,27 +1,45 @@
-import type { Block } from "../types";
-import { Add } from "./primitives/icons";
+import { useEffect } from "react";
 import { Link, Outlet } from "react-router";
-import { BlockForm } from "./blocks/Form";
 import { ToastContainer, toast } from "react-toastify";
-import { useBlock, useBlockUI } from "../context/blockContext";
+import { Add } from "./primitives/icons";
+import { BlockForm } from "./blocks/Form";
+import { SyncStatus } from "./blocks/syncStatus";
+import { useBlockUI } from "../context/blockUIContext";
+import { useSeiStore } from "../sei/store/seiStoreContext";
+import { useSeiSession } from "../sei/session/seiSessionContext";
+import { planFromDraft, type PlanDraft } from "../sei/store/planDraft";
+import type { BlockId } from "../sei/domain/ids";
 
 function App() {
-  const { blocks, dispatch } = useBlock();
-  const notify = () => toast("Block added!");
+  const { savePlan, generateId, lastError, clearError } = useSeiStore();
+  const { getBlock, actionsFor, clock } = useSeiSession();
   const { isModalOpen, mode, editingBlockId, openCreateModal, closeModal } =
     useBlockUI();
 
-  const blockBeingEditied = blocks.find((b) => b.id === editingBlockId) ?? null;
+  const blockBeingEdited = getBlock(editingBlockId ?? undefined) ?? null;
 
-  const handleAddingBlock = (newBlock: Block) => {
-    dispatch({ type: "ADD_BLOCK", payload: newBlock });
-    notify();
-    closeModal();
-  };
+  useEffect(() => {
+    if (!lastError) return;
+    toast.error(`Could not save: ${lastError}`);
+    clearError();
+  }, [lastError, clearError]);
 
-  const handleUpdateBlock = (payload: { id: string } & Partial<Block>) => {
-    dispatch({ type: "UPDATE_BLOCK", payload });
-    toast("Block Updated!");
+  const handleSubmit = (draft: PlanDraft) => {
+    if (mode === "edit" && blockBeingEdited) {
+      const { block, tasks } = planFromDraft(draft, blockBeingEdited.block);
+      savePlan(block, tasks);
+      // a live block takes the new plan as a fresh snapshot; a finished
+      // block keeps its recorded history untouched
+      const { status } = blockBeingEdited.projection;
+      if (status === "running" || status === "paused") {
+        actionsFor(block.id as BlockId).replan();
+      }
+      toast("Block updated!");
+    } else {
+      const { block, tasks } = planFromDraft(draft, { generateId, now: clock() });
+      savePlan(block, tasks);
+      toast("Block added!");
+    }
     closeModal();
   };
 
@@ -34,22 +52,25 @@ function App() {
               BlocTi
             </Link>
           </h1>
-          <button
-            onClick={openCreateModal}
-            className="flex items-center px-4 py-2 bg-black hover:bg-gray-800 rounded-lg text-white font-medium transition"
-          >
-            <Add size="1.2em" classNames={["mr-4"]} />
-            Add Block
-          </button>
+          <div className="flex items-center gap-4">
+            <SyncStatus />
+            <button
+              onClick={openCreateModal}
+              className="flex items-center px-4 py-2 bg-black hover:bg-gray-800 rounded-lg text-white font-medium transition"
+            >
+              <Add size="1.2em" classNames={["mr-4"]} />
+              Add Block
+            </button>
+          </div>
         </header>
 
         {isModalOpen && (
           <BlockForm
+            key={editingBlockId ?? "new"}
             mode={mode}
             closeForm={closeModal}
-            addBlock={handleAddingBlock}
-            updateBlock={handleUpdateBlock}
-            initialBlock={blockBeingEditied}
+            onSubmit={handleSubmit}
+            initialBlock={blockBeingEdited}
           />
         )}
 

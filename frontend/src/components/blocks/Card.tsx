@@ -1,26 +1,27 @@
-import type { Block } from "../../types";
 import { Card } from "../primitives/card";
 import { useNavigate } from "react-router";
 import { Clock, Task } from "../primitives/icons";
-import { useDerivedTime } from "../hooks/useDerivedTime";
+import { StatusBadge } from "./statusBadge";
+import { orderedTaskStates } from "../../sei/domain/projection";
+import type { BlockView } from "../../sei/session/seiSessionContext";
+import { formatPercent } from "../../utils";
 
 interface BlockCardProps {
-  block: Block;
+  view: BlockView;
 }
 
-export const BlockCard = ({ block }: BlockCardProps) => {
+export const BlockCard = ({ view }: BlockCardProps) => {
   const navigate = useNavigate();
-  const { elapsed, remaining } = useDerivedTime(block);
-  const handleCardClick = () => {
-    navigate(`/block/${block.id}`);
-  };
+  const { block, projection, metrics, capturedByAgent } = view;
+  const tasks = orderedTaskStates(projection);
 
-  const plannedCap = (block.plannedDuration ?? 0) * 60;
-
-  const progress = plannedCap > 0 ? (elapsed / plannedCap) * 100 : 0;
-  const clamped = Math.max(0, Math.min(100, progress));
-
-  const finalProgress = block.status === "completed" ? 100 : clamped;
+  const remainingSec = tasks.reduce((acc, t) => acc + t.remainingSec, 0);
+  const progress =
+    metrics.plannedFocusSec > 0
+      ? (metrics.focusSec / metrics.plannedFocusSec) * 100
+      : 0;
+  const finalProgress =
+    projection.status === "completed" ? 100 : Math.max(0, Math.min(100, progress));
 
   return (
     <div>
@@ -28,32 +29,35 @@ export const BlockCard = ({ block }: BlockCardProps) => {
         title={block.name}
         headerRight={
           <div className="flex items-center gap-2">
-            <span
-              className={`text-xs font-medium px-2 py-1 rounded-full ${
-                block.status === "running"
-                  ? "bg-green-100 text-green-700"
-                  : block.status === "paused"
-                    ? "bg-yellow-100 text-yellow-700"
-                    : block.status === "completed"
-                      ? "bg-gray-200 text-gray-700"
-                      : "bg-blue-100 text-blue-700"
-              }`}
-            >
-              {block.status}
-            </span>
+            {capturedByAgent ? (
+              <span
+                title="Recorded by an agent hook"
+                className="text-xs font-medium px-2 py-1 rounded-full bg-purple-100 text-purple-700"
+              >
+                agent
+              </span>
+            ) : metrics.isFinal && metrics.fidelity && (
+              <span
+                title="Execution fidelity"
+                className="text-xs font-medium px-2 py-1 rounded-full bg-black text-white"
+              >
+                {formatPercent(metrics.fidelity.score)} fidelity
+              </span>
+            )}
+            <StatusBadge status={projection.status} />
           </div>
         }
-        onClick={handleCardClick}
+        onClick={() => navigate(`/block/${block.id}`)}
         className="bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition cursor-pointer"
       >
         <div className="text-sm text-gray-400 flex items-center gap-1">
           <div className="duration flex items-center gap-1">
             <Clock color="red" />
-            <span>{Math.floor(remaining / 60)} min</span>
+            <span>{Math.ceil(remainingSec / 60)} min left</span>
           </div>
           <div className="tasks flex items-center gap-1 ml-4">
             <Task color="purple" />
-            <span>{block.tasks.length} tasks</span>
+            <span>{tasks.length} tasks</span>
           </div>
         </div>
         <div className="mt-3 bg-gray-200 h-2 rounded-full">
@@ -67,18 +71,21 @@ export const BlockCard = ({ block }: BlockCardProps) => {
         </p>
 
         <ul className="text-sm text-gray-400 mt-2">
-          {block.tasks.slice(0, 3).map((t, i) => (
-            <li key={t.id || i} className="truncate">
-              • {t.name}
+          {tasks.slice(0, 3).map((t) => (
+            <li
+              key={t.taskId}
+              className={`truncate ${t.status === "completed" ? "line-through" : ""}`}
+            >
+              • {t.title}
             </li>
           ))}
-          {block.tasks.length <= 3 &&
-            Array.from({ length: 4 - block.tasks.length }).map((_, i) => (
+          {tasks.length <= 3 &&
+            Array.from({ length: 4 - tasks.length }).map((_, i) => (
               <li key={`placeholder-${i}`} className="opacity-0">
                 •
               </li>
             ))}
-          {block.tasks.length > 3 && <li>+{block.tasks.length - 3} more</li>}
+          {tasks.length > 3 && <li>+{tasks.length - 3} more</li>}
         </ul>
       </Card>
     </div>

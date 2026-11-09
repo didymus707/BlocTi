@@ -1,98 +1,64 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { toast } from "react-toastify";
 import Button from "../primitives/button";
 import { Input } from "../primitives/input";
-import { useBlock } from "../../context/blockContext";
-import { ToastContainer, toast } from "react-toastify";
+import type { TaskId } from "../../sei/domain/ids";
+import { useSeiStore } from "../../sei/store/seiStoreContext";
+import type { BlockView } from "../../sei/session/seiSessionContext";
+import { minutesToSeconds } from "../../utils";
 
 interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
-  blockId: string | null;
-  mode?: "create" | "edit";
-  initialTask?: { id: string; name: string; duration: number } | null;
+  view: BlockView | null;
+  // called after the plan is saved, e.g. to re-snapshot a live block
+  onPlanChanged?: () => void;
 }
 
-export const TaskModal = ({
-  blockId,
-  isOpen,
-  onClose,
-  mode = "create",
-  initialTask = null,
-}: TaskModalProps) => {
-  const { dispatch } = useBlock();
-
+export const TaskModal = ({ view, isOpen, onClose, onPlanChanged }: TaskModalProps) => {
+  const { savePlan, generateId } = useSeiStore();
   const [name, setName] = useState("");
   const [duration, setDuration] = useState("");
 
-  useEffect(() => {
-    if (!isOpen) return;
+  if (!isOpen || !view) return null;
 
-    if (mode === 'edit' && initialTask) {
-      setName(initialTask.name);
-      setDuration(String(initialTask.duration));
-    } else {
-      setName("");
-      setDuration("");
-    }
-  }, [isOpen, mode, initialTask]);
-
-  if (!isOpen || !blockId) return null;
-  const resolvedBlockId = blockId;
+  const close = () => {
+    setName("");
+    setDuration("");
+    onClose();
+  };
 
   const handleSubmit = () => {
-    if (!name.trim() || !duration) return;
-
-    if (mode === 'edit' && initialTask) {
-      dispatch({
-        type: "UPDATE_TASK",
-        payload: {
-          blockId: resolvedBlockId,
-          taskId: initialTask.id,
-          data: {
-            name,
-            duration: Number(duration),
-            remaining: Number(duration) * 60,
-          },
-        },
-      });
-      toast("Task updated!");
-      onClose();
-      return;
-    }
-
-    dispatch({
-      type: "ADD_TASK_TO_BLOCK",
-      payload: {
-        blockId,
-        task: {
-          id: crypto.randomUUID(),
-          blockId: resolvedBlockId,
-          name,
-          elapsed: 0,
-          progress: 0,
-          completed: false,
-          duration: Number(duration),
-          remaining: Number(duration) * 60,
-        },
-      },
-    });
-
+    if (!name.trim() || !duration || Number(duration) <= 0) return;
+    const { block, tasks } = view;
+    const task = {
+      id: generateId() as TaskId,
+      name: name.trim(),
+      blockId: block.id,
+      order: tasks.length ? Math.max(...tasks.map((t) => t.order)) + 1 : 0,
+      plannedDuration: minutesToSeconds(Number(duration)),
+    };
+    savePlan({ ...block, taskIds: [...block.taskIds, task.id] }, [...tasks, task]);
+    onPlanChanged?.();
     toast("Task added!");
-    onClose();
+    close();
   };
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white p-4 rounded-xl w-full max-w-md shadow-lg">
-        <h2 className="text-xl font-semibold mb-4">
-          {mode === "edit" ? "Edit Task" : "Add Task"}
-        </h2>
+      <div
+        role="dialog"
+        aria-label="Add task"
+        className="bg-white p-4 rounded-xl w-full max-w-md shadow-lg"
+      >
+        <h2 className="text-xl font-semibold mb-4">Add Task</h2>
 
         <div className="space-y-4">
           <div className="flex justify-between w-full gap-4">
             <Input
               type="text"
               placeholder="Task name"
+              aria-label="New task name"
               inputValue={name}
               setValue={setName}
               className="grow-3 border border-blue-500"
@@ -101,6 +67,7 @@ export const TaskModal = ({
             <Input
               type="number"
               placeholder="Minutes"
+              aria-label="New task minutes"
               inputValue={duration}
               setValue={setDuration}
               className="grow border border-blue-500"
@@ -108,24 +75,15 @@ export const TaskModal = ({
           </div>
 
           <div className="flex justify-end gap-3 mt-4">
-            <Button
-              className="px-4 text-sm"
-              variant="secondary"
-              onClick={onClose}
-            >
+            <Button className="px-4 text-sm" variant="secondary" onClick={close}>
               Cancel
             </Button>
-            <Button
-              className="px-4 text-sm"
-              variant="primary"
-              onClick={handleSubmit}
-            >
-              {mode === "edit" ? "Save" : "Add Task"}
+            <Button className="px-4 text-sm" variant="primary" onClick={handleSubmit}>
+              Add Task
             </Button>
           </div>
         </div>
       </div>
-      <ToastContainer position="top-right" autoClose={3000} />
     </div>
   );
 };

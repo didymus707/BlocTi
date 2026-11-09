@@ -1,9 +1,12 @@
 import { BlockCard } from "../components/blocks/Card";
 import { Overview } from "../components/blocks/overView";
-import { useBlock, useBlockUI } from "../context/blockContext";
+import { useBlockUI } from "../context/blockUIContext";
+import { useSeiSession } from "../sei/session/seiSessionContext";
+import { useSeiStore } from "../sei/store/seiStoreContext";
 
 export const Home = () => {
-  const { blocks } = useBlock();
+  const { blocks } = useSeiSession();
+  const { status } = useSeiStore();
   const { openCreateModal } = useBlockUI();
 
   return (
@@ -11,8 +14,9 @@ export const Home = () => {
       <div className="p-6 bg-gray-50 text-gray-800">
         <div className="max-w-5xl mx-auto">
           <Overview />
-          {/* blocklist */}
-          {blocks.length === 0 ? (
+          {status === "loading" ? (
+            <p className="text-center mt-32 text-gray-400">Loading blocks…</p>
+          ) : blocks.length === 0 ? (
             <div className="text-center mt-32 text-gray-400">
               <p className="text-lg">
                 No blocks yet. <br /> Create your first block to start tracking
@@ -32,8 +36,8 @@ export const Home = () => {
             </div>
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {blocks.map((block) => (
-                <BlockCard key={block.id} block={block} />
+              {blocks.map((view) => (
+                <BlockCard key={view.block.id} view={view} />
               ))}
             </div>
           )}
