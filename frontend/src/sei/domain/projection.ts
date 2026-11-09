@@ -39,6 +39,18 @@ export interface TaskExecutionState {
   finishedAt: string | null;
 }
 
+// One stretch of wall-clock time: a task in focus, or a pause. Together they
+// are the execution trace; `open` marks the interval still running at `now`.
+export interface ExecutionInterval {
+  kind: "focus" | "pause";
+  taskId: TaskId | null;
+  pauseKind: PauseKind | null;
+  evidence: Evidence;
+  from: string;
+  to: string;
+  open: boolean;
+}
+
 export interface BlockExecutionProjection {
   blockId: BlockId;
   name: string;
@@ -61,6 +73,7 @@ export interface BlockExecutionProjection {
   taskStates: Record<TaskId, TaskExecutionState>;
   eventCount: number;
   lastEventAt: string | null;
+  intervals: ExecutionInterval[];
 }
 
 // clamped at 0 so out-of-order timestamps can never produce negative time
@@ -144,13 +157,20 @@ export function projectBlock(
     ) as Record<TaskId, TaskExecutionState>,
     eventCount: 0,
     lastEventAt: null,
+    intervals: [],
   };
 
   // the one open focus interval and the one open pause interval, if any
   const open: {
     segment: { taskId: TaskId; since: string } | null;
-    pause: { since: string; evidence: Evidence } | null;
+    pause: { since: string; evidence: Evidence; kind: PauseKind } | null;
   } = { segment: null, pause: null };
+
+  const record = (interval: ExecutionInterval) => {
+    if (Date.parse(interval.to) > Date.parse(interval.from)) {
+      state.intervals.push(interval);
+    }
+  };
 
   const updateTask = (taskId: TaskId, patch: Partial<TaskExecutionState>) => {
     const current = state.taskStates[taskId];
@@ -158,7 +178,7 @@ export function projectBlock(
     state.taskStates[taskId] = withDerivedTime({ ...current, ...patch });
   };
 
-  const closeSegment = (at: string) => {
+  const closeSegment = (at: string, stillOpen = false) => {
     const { segment } = open;
     if (!segment) return;
     const task = state.taskStates[segment.taskId];
@@ -167,6 +187,15 @@ export function projectBlock(
         elapsedSec: task.elapsedSec + secondsBetween(segment.since, at),
       });
     }
+    record({
+      kind: "focus",
+      taskId: segment.taskId,
+      pauseKind: null,
+      evidence: "observed",
+      from: segment.since,
+      to: at,
+      open: stillOpen,
+    });
     open.segment = null;
   };
 
@@ -181,7 +210,7 @@ export function projectBlock(
   };
 
   const beginPause = (kind: PauseKind, at: string, evidence: Evidence) => {
-    open.pause = { since: at, evidence };
+    open.pause = { since: at, evidence, kind };
     state.status = "paused";
     state.isPaused = true;
     state.pauseKind = kind;
@@ -195,6 +224,15 @@ export function projectBlock(
       const pausedFor = secondsBetween(pause.since, at);
       state.pausedSec += pausedFor;
       if (pause.evidence === "inferred") state.inferredPausedSec += pausedFor;
+      record({
+        kind: "pause",
+        taskId: state.activeTaskId,
+        pauseKind: pause.kind,
+        evidence: pause.evidence,
+        from: pause.since,
+        to: at,
+        open: false,
+      });
     }
     open.pause = null;
     state.isPaused = false;
@@ -368,11 +406,20 @@ export function projectBlock(
   }
 
   // live tail: intervals still open at `now`
-  if (open.segment && state.status === "running") closeSegment(now);
+  if (open.segment && state.status === "running") closeSegment(now, true);
   if (open.pause) {
     const pausedFor = secondsBetween(open.pause.since, now);
     state.pausedSec += pausedFor;
     if (open.pause.evidence === "inferred") state.inferredPausedSec += pausedFor;
+    record({
+      kind: "pause",
+      taskId: state.activeTaskId,
+      pauseKind: open.pause.kind,
+      evidence: open.pause.evidence,
+      from: open.pause.since,
+      to: now,
+      open: true,
+    });
   }
 
   return state;

@@ -565,6 +565,70 @@ describe("projectBlock", () => {
     });
   });
 
+  describe("intervals (the execution trace)", () => {
+    it("records each focus and pause interval in order", () => {
+      const p = project(
+        sequence(
+          ...started(0),
+          ev.taskPaused(T1, 60),
+          ev.taskResumed(T1, 90),
+          ev.taskSwitched(T1, T3, 150),
+          ev.blockPaused(200),
+          ev.blockResumed(260),
+          ev.taskCompleted(T3, 300),
+          ev.blockCompleted(300),
+        ),
+        999,
+      );
+      expect(
+        p.intervals.map((i) => [i.kind, i.taskId, i.pauseKind, i.from, i.to, i.open]),
+      ).toEqual([
+        ["focus", T1, null, at(0), at(60), false],
+        ["pause", T1, "task", at(60), at(90), false],
+        ["focus", T1, null, at(90), at(150), false],
+        ["focus", T3, null, at(150), at(200), false],
+        ["pause", T3, "block", at(200), at(260), false],
+        ["focus", T3, null, at(260), at(300), false],
+      ]);
+    });
+
+    it("marks the intervals still running at now as open", () => {
+      const running = project(sequence(...started(0)), 30);
+      expect(running.intervals).toEqual([
+        expect.objectContaining({ kind: "focus", to: at(30), open: true }),
+      ]);
+      const paused = project(sequence(...started(0), ev.taskPaused(T1, 10)), 30);
+      expect(paused.intervals.at(-1)).toMatchObject({ kind: "pause", to: at(30), open: true });
+    });
+
+    it("keeps the evidence of inferred pauses and drops zero-length intervals", () => {
+      const p = project(
+        sequence(
+          ...started(0),
+          ev.taskPaused(T1, 0, { evidence: "inferred" }),
+          ev.taskResumed(T1, 20),
+        ),
+        20,
+      );
+      expect(p.intervals).toEqual([
+        expect.objectContaining({ kind: "pause", evidence: "inferred", from: at(0), to: at(20) }),
+      ]);
+    });
+
+    it("sums back to the projection's focus and pause totals", () => {
+      const p = project(
+        sequence(...started(0), ev.taskPaused(T1, 100), ev.taskResumed(T1, 160)),
+        400,
+      );
+      const total = (kind: string) =>
+        p.intervals
+          .filter((i) => i.kind === kind)
+          .reduce((acc, i) => acc + (Date.parse(i.to) - Date.parse(i.from)) / 1000, 0);
+      expect(total("focus")).toBe(p.taskStates[T1].elapsedSec);
+      expect(total("pause")).toBe(p.pausedSec);
+    });
+  });
+
   afterAll(() => {
     // Sprint 1 exit criterion: every event type is exercised by this suite
     expect([...usedEventTypes].sort()).toEqual([...SEI_EVENT_TYPES].sort());
