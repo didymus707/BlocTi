@@ -1,31 +1,36 @@
 import type { CommandResult } from "./command/resolver";
 import type { SeiEvent } from "./events";
-import type { EventId } from "./ids";
+import type { BlockId, EventId, IdGenerator } from "./ids";
 
-type MaterializedEvent<T extends CommandResult> = T & {
-  eventId: EventId;
-  seq: number;
+// highest seq per block; seq is per block stream and starts at 1
+export const lastSeqByBlock = (events: SeiEvent[]): Map<BlockId, number> => {
+  const seqs = new Map<BlockId, number>();
+  for (const e of events) {
+    seqs.set(e.blockId, Math.max(seqs.get(e.blockId) ?? 0, e.seq));
+  }
+  return seqs;
 };
 
-const materializeEvent = <T extends CommandResult>(
-  event: T,
-  seq: number,
-): MaterializedEvent<T> => ({
-  ...event,
-  eventId: crypto.randomUUID() as EventId,
-  seq,
-});
+// gives payloads the stream metadata (eventId, seq) the resolver leaves out
+export const materializeEvents = (
+  existingEvents: SeiEvent[],
+  newEvents: CommandResult[],
+  generateId: IdGenerator,
+): SeiEvent[] => {
+  const seqs = lastSeqByBlock(existingEvents);
+  return newEvents.map((event) => {
+    const seq = (seqs.get(event.blockId) ?? 0) + 1;
+    seqs.set(event.blockId, seq);
+    return { ...event, eventId: generateId() as EventId, seq } as SeiEvent;
+  });
+};
 
-// create an event helper that inserts a new event into an event stream
+// returns the whole stream: existing events followed by the new ones
 export const appendEvents = (
   existingEvents: SeiEvent[],
   newEvents: CommandResult[],
-): SeiEvent[] => {
-  const lastSeq = existingEvents.length
-    ? existingEvents[existingEvents.length - 1].seq
-    : -1;
-
-  return newEvents.map((event, index) =>
-    materializeEvent(event, lastSeq + index + 1),
-  );
-};
+  generateId: IdGenerator,
+): SeiEvent[] => [
+  ...existingEvents,
+  ...materializeEvents(existingEvents, newEvents, generateId),
+];
