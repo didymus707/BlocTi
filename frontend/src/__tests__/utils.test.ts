@@ -27,3 +27,12 @@ describe("formatting", () => {
     expect(formatPercent(1.4)).toBe("100%");
   });
 });
+
+describe("words and dates", () => {
+  it("pluralises", async () => {
+    const { plural } = await import("../utils");
+    expect(plural(1, "session")).toBe("1 session");
+    expect(plural(3, "session")).toBe("3 sessions");
+    expect(plural(2, "switch", "switches")).toBe("2 switches");
+  });
+});

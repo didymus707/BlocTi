@@ -31,7 +31,27 @@ export const formatPercent = (ratio: number): string =>
   `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`;
 
 export const formatTime = (iso: string): string =>
-  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+
+// "09:14"
+export const formatHM = (iso: string): string =>
+  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+
+// "Monday 9 November"
+export const formatLongDate = (iso: string): string => {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString("en-GB", { weekday: "long" })} ${d.getDate()} ${d.toLocaleDateString("en-GB", { month: "long" })}`;
+};
+
+// "1 session", "3 sessions"
+export const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
+
+// "8 Nov"
+export const formatShortDate = (iso: string): string =>
+  new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
+export const isSameLocalDay = (a: string, b: string): boolean =>
+  new Date(a).toDateString() === new Date(b).toDateString();
 
 export const minutesToSeconds = (minutes: number) => Math.round(minutes * 60);
 export const secondsToMinutes = (seconds: number) => Math.round(seconds / 60);
