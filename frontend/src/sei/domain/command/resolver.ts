@@ -1,6 +1,10 @@
-import type { SeiEvent } from "../events";
-import type { BlockPlan, TaskPlan } from "../plan";
-import { projectBlock } from "../projection";
+import { HUMAN_TIMER, type SeiEvent } from "../events";
+import type { TaskId } from "../ids";
+import { snapshotPlan, type BlockPlan, type TaskPlan } from "../plan";
+import {
+  projectBlock,
+  type BlockExecutionProjection,
+} from "../projection";
 import type { ExecutionCommand } from "./executionCommand";
 
 export type CreateEvent<T extends SeiEvent["type"]> = Omit<
@@ -8,115 +12,171 @@ export type CreateEvent<T extends SeiEvent["type"]> = Omit<
   "eventId" | "seq"
 >;
 
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
+  ? Omit<T, K>
+  : never;
 
 export type CommandResult = DistributiveOmit<SeiEvent, "eventId" | "seq">;
 
+const isUnfinished = (state: BlockExecutionProjection, taskId: TaskId) => {
+  const task = state.taskStates[taskId];
+  return !!task && task.status !== "completed" && task.status !== "skipped";
+};
+
+// the next unfinished task after `fromTaskId` in plan order, wrapping around
+// to tasks that were switched away from earlier
+const nextUnfinishedTask = (
+  state: BlockExecutionProjection,
+  fromTaskId: TaskId,
+): TaskId | null => {
+  const order = state.taskOrder;
+  const from = order.indexOf(fromTaskId);
+  const rotated = [...order.slice(from + 1), ...order.slice(0, from + 1)];
+  return (
+    rotated.find((id) => id !== fromTaskId && isUnfinished(state, id)) ?? null
+  );
+};
+
+// Validates a command against projected truth and returns the event payloads
+// it produces. An invalid command produces no events. Pure: time comes from
+// command.at and ids/seq are assigned later by appendEvents or the server.
 export const resolveCommand = (
   block: BlockPlan,
   tasks: TaskPlan[],
   events: SeiEvent[],
   command: ExecutionCommand,
 ): CommandResult[] => {
-  // projection is pure now: time comes from the command
+  if (command.blockId !== block.id) return [];
+
   const state = projectBlock(block, tasks, events, command.at);
-  const { status } = state;
-  const orderedTasks = tasks
-    .filter((task) => block.id === task.blockId)
-    .sort((a, b) => a.order - b.order);
+  const { status, activeTaskId, sessionId } = state;
+  const isLive = status === "running" || status === "paused";
+
+  const base = {
+    ...HUMAN_TIMER,
+    ...command.provenance,
+    userId: command.userId,
+    blockId: block.id,
+    occurredAt: command.at,
+  };
+
+  // after the active task finishes: start the next one, or complete the block
+  const advanceFrom = (
+    finishedTaskId: TaskId,
+    session: NonNullable<typeof sessionId>,
+  ): CommandResult[] => {
+    const next = nextUnfinishedTask(state, finishedTaskId);
+    return next
+      ? [{ ...base, sessionId: session, type: "TaskStarted", taskId: next }]
+      : [{ ...base, sessionId: session, type: "BlockCompleted" }];
+  };
 
   switch (command.type) {
     case "StartBlock": {
       if (status !== "idle") return [];
-      const firstTask = orderedTasks[0];
-      if (!firstTask) return [];
-
+      const snapshot = snapshotPlan(block, tasks);
+      const first = command.taskId
+        ? snapshot.tasks.find((t) => t.taskId === command.taskId)
+        : snapshot.tasks[0];
+      if (!first) return [];
+      const session = { ...base, sessionId: command.sessionId };
       return [
-        {
-          type: "BlockStarted",
-          userId: command.userId,
-          blockId: block.id,
-          sessionId: command.sessionId,
-          occurredAt: command.at,
-        } as CreateEvent<"BlockStarted">,
-        {
-          type: "TaskStarted",
-          taskId: firstTask.id,
-          userId: command.userId,
-          blockId: block.id,
-          sessionId: command.sessionId,
-          occurredAt: command.at,
-        } as CreateEvent<"TaskStarted">,
+        { ...session, type: "BlockPlanned", ...snapshot },
+        { ...session, type: "BlockStarted" },
+        { ...session, type: "TaskStarted", taskId: first.taskId },
       ];
     }
     case "PauseTask": {
-      const { activeTaskId, isPaused, sessionId } = state;
-      if (status !== "running" || !activeTaskId || isPaused || !sessionId)
-        return [];
+      if (status !== "running" || !activeTaskId || !sessionId) return [];
       return [
         {
+          ...base,
+          sessionId,
           type: "TaskPaused",
           taskId: activeTaskId,
-          userId: command.userId,
-          blockId: block.id,
-          sessionId,
-          occurredAt: command.at,
-          reason: command.reason,
-        } as CreateEvent<"TaskPaused">,
+          ...(command.reason ? { reason: command.reason } : {}),
+        },
       ];
     }
     case "ResumeTask": {
-      const { activeTaskId, sessionId, isPaused } = state;
-      if (status !== "paused" || !activeTaskId || !sessionId || !isPaused)
-        return [];
+      if (state.pauseKind !== "task" || !activeTaskId || !sessionId) return [];
+      return [{ ...base, sessionId, type: "TaskResumed", taskId: activeTaskId }];
+    }
+    case "PauseBlock": {
+      if (status !== "running" || !sessionId) return [];
       return [
         {
-          type: "TaskResumed",
-          taskId: activeTaskId,
-          userId: command.userId,
-          blockId: block.id,
+          ...base,
           sessionId,
-          occurredAt: command.at,
-        } as CreateEvent<"TaskResumed">,
+          type: "BlockPaused",
+          ...(command.reason ? { reason: command.reason } : {}),
+        },
+      ];
+    }
+    case "ResumeBlock": {
+      if (state.pauseKind !== "block" || !sessionId) return [];
+      return [
+        {
+          ...base,
+          sessionId,
+          type: "BlockResumed",
+          ...(command.reason ? { reason: command.reason } : {}),
+        },
       ];
     }
     case "CompleteTask": {
-      const { activeTaskId, sessionId, isPaused } = state;
-      if (status !== "running" || !activeTaskId || !sessionId || isPaused)
-        return [];
-      const results: CommandResult[] = [
-        {
-          type: "TaskCompleted",
-          taskId: activeTaskId,
-          blockId: block.id,
-          userId: command.userId,
-          occurredAt: command.at,
-          sessionId,
-        } as CreateEvent<"TaskCompleted">,
+      if (!isLive || !activeTaskId || !sessionId) return [];
+      return [
+        { ...base, sessionId, type: "TaskCompleted", taskId: activeTaskId },
+        ...advanceFrom(activeTaskId, sessionId),
       ];
-
-      const currentIndex = orderedTasks.findIndex((t) => t.id === activeTaskId);
-      const nextTask = orderedTasks[currentIndex + 1];
-
-      if (nextTask) {
-        results.push({
-          type: "TaskStarted",
-          taskId: nextTask.id,
-          userId: command.userId,
-          blockId: block.id,
-          sessionId,
-          occurredAt: command.at,
-        } as CreateEvent<"TaskStarted">);
-      } else {
-        results.push({
-          type: "BlockCompleted",
-          userId: command.userId,
-          blockId: block.id,
-          sessionId,
-          occurredAt: command.at,
-        } as CreateEvent<"BlockCompleted">);
+    }
+    case "SkipTask": {
+      const taskId = command.taskId ?? activeTaskId;
+      if (!isLive || !sessionId || !taskId || !isUnfinished(state, taskId))
+        return [];
+      const skipped: CommandResult = {
+        ...base,
+        sessionId,
+        type: "TaskSkipped",
+        taskId,
+      };
+      if (taskId === activeTaskId) {
+        return [skipped, ...advanceFrom(taskId, sessionId)];
       }
-      return results;
+      return [skipped];
+    }
+    case "SwitchTask": {
+      const { toTaskId } = command;
+      if (
+        !isLive ||
+        !sessionId ||
+        !activeTaskId ||
+        toTaskId === activeTaskId ||
+        !isUnfinished(state, toTaskId)
+      )
+        return [];
+      return [
+        {
+          ...base,
+          sessionId,
+          type: "TaskSwitched",
+          fromTaskId: activeTaskId,
+          toTaskId,
+        },
+      ];
+    }
+    case "ReplanBlock": {
+      if (!isLive || !sessionId) return [];
+      return [
+        { ...base, sessionId, type: "BlockPlanned", ...snapshotPlan(block, tasks) },
+      ];
+    }
+    case "TerminateSession": {
+      if (!isLive || !sessionId) return [];
+      return [
+        { ...base, sessionId, type: "SessionTerminated", reason: command.reason },
+      ];
     }
     default:
       return [];
