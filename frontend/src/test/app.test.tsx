@@ -117,6 +117,56 @@ describe("BlocTi app on SEI", () => {
     expect(within(screen.getByRole("list", { name: "Event trace" })).getByText("BlockCompleted")).toBeInTheDocument();
   });
 
+  it("checks a run against the rules set in the plan: order and a critical task", async () => {
+    const { clock } = renderApp();
+    fireEvent.click(await screen.findByRole("button", { name: "New block" }));
+    const dialog = within(screen.getByRole("dialog", { name: "New block" }));
+    fireEvent.change(dialog.getByLabelText("Name"), { target: { value: "Release" } });
+    fireEvent.change(dialog.getByLabelText("Minutes"), { target: { value: "30" } });
+    for (const [task, taskMinutes] of [
+      ["Run tests", "10"],
+      ["Ship", "20"],
+    ]) {
+      fireEvent.change(dialog.getByLabelText("Task name"), { target: { value: task } });
+      fireEvent.change(dialog.getByLabelText("Task minutes"), { target: { value: taskMinutes } });
+      fireEvent.click(dialog.getByRole("button", { name: "Add" }));
+    }
+    // a new task starts as "required"
+    expect(dialog.getByLabelText("Task 2 importance")).toHaveValue("required");
+    fireEvent.change(dialog.getByLabelText("Task 1 importance"), { target: { value: "critical" } });
+    fireEvent.click(dialog.getByLabelText(/Tasks must be finished in this order/));
+    fireEvent.click(dialog.getByRole("button", { name: "Create block" }));
+    await settle();
+    await openBlock("Release");
+
+    // ship first, never run the tests
+    click("Start session");
+    await waitFor(() => expect(currentTask()).toBe("Run tests"));
+    click("Switch to Ship");
+    clock.advance(1200);
+    await waitFor(() => expect(elapsed()).toBe("20:00"));
+    click("Complete task");
+    click("Stop session");
+    await waitFor(() => expect(status()).toBe("Stopped"));
+
+    // 17 points in play; the critical task forfeits its 10, the order break costs 3
+    expect(screen.getByTestId("fidelity-verdict")).toHaveTextContent("Not followed");
+    expect(screen.getByTestId("fidelity-score")).toHaveTextContent("24%");
+    const deviations = within(screen.getByRole("list", { name: "Deviations" })).getAllByRole("listitem");
+    expect(deviations.map((d) => d.textContent)).toEqual([
+      expect.stringContaining("Run tests was not finished when the block ended."),
+      expect.stringContaining("Ship was finished while Run tests was still open."),
+    ]);
+
+    // once the block has started its rules are frozen
+    click("Edit plan");
+    const edit = within(screen.getByRole("dialog", { name: "Edit plan" }));
+    expect(edit.getByLabelText(/Tasks must be finished in this order/)).toBeChecked();
+    expect(edit.getByLabelText(/Tasks must be finished in this order/)).toBeDisabled();
+    expect(edit.getByLabelText("Task 1 importance")).toHaveValue("critical");
+    fireEvent.click(edit.getByRole("button", { name: "Cancel" }));
+  });
+
   it("keeps a trace across a page refresh", async () => {
     const clock = createTestClock();
     const first = renderApp({ clock });

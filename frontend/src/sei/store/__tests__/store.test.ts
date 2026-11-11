@@ -30,6 +30,7 @@ import {
   createLocalPersistence,
   PersistenceError,
 } from "../persistence";
+import { DEFAULT_PLAN_RULES, DEFAULT_STEP_RULES } from "../../domain/procedure";
 import { duplicatePlan, draftFromPlan, planFromDraft } from "../planDraft";
 
 const withPlan = applyOp(EMPTY_STATE, { kind: "savePlan", id: "op-1", block: PLAN, tasks: PLAN_TASKS });
@@ -243,10 +244,11 @@ describe("plan drafts", () => {
       {
         name: "  Deep work ",
         plannedMinutes: 90,
+        ordered: false,
         tasks: [
-          { id: "a", name: "Write", minutes: 45 },
-          { id: "b", name: "  ", minutes: 10 },
-          { id: "c", name: "Zero", minutes: 0 },
+          { id: "a", name: "Write", minutes: 45, importance: "required" },
+          { id: "b", name: "  ", minutes: 10, importance: "required" },
+          { id: "c", name: "Zero", minutes: 0, importance: "required" },
         ],
       },
       { generateId: idSequence("blk"), now: at(0) },
@@ -258,7 +260,56 @@ describe("plan drafts", () => {
       taskIds: ["a"],
       createdAt: at(0),
     });
-    expect(tasks).toEqual([{ id: "a", name: "Write", blockId: "blk-1", order: 0, plannedDuration: 2700 }]);
+    expect(tasks).toEqual([
+      {
+        id: "a",
+        name: "Write",
+        blockId: "blk-1",
+        order: 0,
+        plannedDuration: 2700,
+        required: true,
+        severity: "major",
+      },
+    ]);
+  });
+
+  it("turns each task's importance into step rules, and the order choice into a plan rule", () => {
+    const { block, tasks } = planFromDraft(
+      {
+        name: "Release",
+        plannedMinutes: 60,
+        ordered: true,
+        tasks: [
+          { id: "a", name: "Run the tests", minutes: 20, importance: "critical" },
+          { id: "b", name: "Write the changelog", minutes: 20, importance: "minor" },
+          { id: "c", name: "Tidy the branch", minutes: 20, importance: "optional" },
+        ],
+      },
+      { generateId: idSequence("blk"), now: at(0) },
+    );
+    expect(block.rules).toEqual({ ordered: true, timeTolerance: DEFAULT_PLAN_RULES.timeTolerance });
+    expect(tasks.map((t) => [t.name, t.required, t.severity])).toEqual([
+      ["Run the tests", true, "critical"],
+      ["Write the changelog", true, "minor"],
+      ["Tidy the branch", false, "minor"],
+    ]);
+  });
+
+  it("reads each task's rules back as its importance", () => {
+    const tasks = [
+      { ...PLAN_TASKS[0], severity: "critical" as const },
+      { ...PLAN_TASKS[1], required: false },
+      PLAN_TASKS[2],
+    ];
+    const draft = draftFromPlan({ ...PLAN, rules: { ordered: true, timeTolerance: 0.15 } }, tasks);
+    expect(draft.ordered).toBe(true);
+    expect(draft.tasks.map((t) => t.importance)).toEqual(["critical", "optional", "required"]);
+  });
+
+  it("keeps a block's time band when the form edits it", () => {
+    const strict = { ...PLAN, rules: { ordered: false, timeTolerance: 0.05 } };
+    const draft = { ...draftFromPlan(strict, PLAN_TASKS), ordered: true };
+    expect(planFromDraft(draft, strict).block.rules).toEqual({ ordered: true, timeTolerance: 0.05 });
   });
 
   it("round-trips through a draft for editing", () => {
@@ -266,13 +317,18 @@ describe("plan drafts", () => {
     expect(draft).toEqual({
       name: PLAN.name,
       plannedMinutes: 30,
+      ordered: false,
       tasks: [
-        { id: T1, name: "Read", minutes: 10 },
-        { id: "task-2", name: "Write", minutes: 5 },
-        { id: "task-3", name: "Review", minutes: 15 },
+        { id: T1, name: "Read", minutes: 10, importance: "required" },
+        { id: "task-2", name: "Write", minutes: 5, importance: "required" },
+        { id: "task-3", name: "Review", minutes: 15, importance: "required" },
       ],
     });
-    expect(planFromDraft(draft, PLAN)).toEqual({ block: PLAN, tasks: PLAN_TASKS });
+    // the way back spells the rules out, defaults included
+    expect(planFromDraft(draft, PLAN)).toEqual({
+      block: { ...PLAN, rules: DEFAULT_PLAN_RULES },
+      tasks: PLAN_TASKS.map((t) => ({ ...t, ...DEFAULT_STEP_RULES })),
+    });
   });
 
   it("duplicates a plan with fresh ids for a re-run", () => {

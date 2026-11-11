@@ -1,6 +1,8 @@
 import { useState, type FormEvent, type KeyboardEvent } from "react";
+import { DEFAULT_IMPORTANCE, IMPORTANCES, type Importance } from "../../sei/domain/procedure";
 import type { BlockView } from "../../sei/session/seiSessionContext";
 import { draftFromPlan, type DraftTask, type PlanDraft } from "../../sei/store/planDraft";
+import { IMPORTANCE_LABEL, IMPORTANCE_NOTE } from "../../sei/view/explain";
 import { Button } from "../../ui/Button";
 import { Dialog, SrOnly } from "../../ui/Dialog";
 import { CheckIcon, CloseIcon } from "../../ui/icons";
@@ -27,6 +29,7 @@ export const BlockForm = ({ mode, initialBlock, onSubmit, onClose }: BlockFormPr
   const [hours, setHours] = useState(initial ? String(Math.floor(initial.plannedMinutes / 60)) : "");
   const [minutes, setMinutes] = useState(initial ? String(initial.plannedMinutes % 60) : "");
   const [tasks, setTasks] = useState<DraftTask[]>(initial?.tasks ?? []);
+  const [ordered, setOrdered] = useState(initial?.ordered ?? false);
   const [newName, setNewName] = useState("");
   const [newMinutes, setNewMinutes] = useState("");
   const [startNow, setStartNow] = useState(false);
@@ -34,6 +37,8 @@ export const BlockForm = ({ mode, initialBlock, onSubmit, onClose }: BlockFormPr
   const status = initialBlock?.projection.status ?? "idle";
   const isFinished = status === "completed" || status === "terminated";
   const isLive = status === "running" || status === "paused";
+  // the order rule is frozen with the budget when the block starts
+  const rulesFrozen = isLive || isFinished;
   // tasks with recorded history keep their plan: an edit cannot rewrite the past
   const hasHistory = (taskId: string) => {
     const state = initialBlock?.projection.taskStates[taskId as never];
@@ -47,7 +52,10 @@ export const BlockForm = ({ mode, initialBlock, onSubmit, onClose }: BlockFormPr
   const addTask = () => {
     const m = Number(newMinutes);
     if (!newName.trim() || !(m > 0)) return;
-    setTasks((prev) => [...prev, { id: crypto.randomUUID(), name: newName.trim(), minutes: m }]);
+    setTasks((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), name: newName.trim(), minutes: m, importance: DEFAULT_IMPORTANCE },
+    ]);
     setNewName("");
     setNewMinutes("");
   };
@@ -71,7 +79,7 @@ export const BlockForm = ({ mode, initialBlock, onSubmit, onClose }: BlockFormPr
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim() || budget <= 0) return;
-    onSubmit({ name, plannedMinutes: budget, tasks }, { startNow });
+    onSubmit({ name, plannedMinutes: budget, ordered, tasks }, { startNow });
   };
 
   const fit =
@@ -171,7 +179,7 @@ export const BlockForm = ({ mode, initialBlock, onSubmit, onClose }: BlockFormPr
             {tasks.map((task, i) => {
               const locked = hasHistory(task.id);
               return (
-                <li key={task.id} className="flex items-center gap-2">
+                <li key={task.id} className="flex flex-wrap items-center gap-2">
                   <span className="w-5 text-center font-mono text-xs text-faint" aria-hidden="true">
                     {i + 1}
                   </span>
@@ -183,8 +191,25 @@ export const BlockForm = ({ mode, initialBlock, onSubmit, onClose }: BlockFormPr
                     type="text"
                     value={task.name}
                     onChange={(e) => updateTask(task.id, { name: e.target.value })}
-                    className={`${inputBase} min-w-0 flex-1`}
+                    className={`${inputBase} min-w-0 flex-[1_1_140px]`}
                   />
+                  <label className="sr-only" htmlFor={`task-${task.id}-importance`}>
+                    Task {i + 1} importance
+                  </label>
+                  <select
+                    id={`task-${task.id}-importance`}
+                    value={task.importance}
+                    disabled={locked}
+                    title={locked ? "Started tasks keep their rules" : IMPORTANCE_NOTE[task.importance]}
+                    onChange={(e) => updateTask(task.id, { importance: e.target.value as Importance })}
+                    className={`${inputBase} w-[108px] px-2 disabled:text-faint`}
+                  >
+                    {IMPORTANCES.map((importance) => (
+                      <option key={importance} value={importance}>
+                        {IMPORTANCE_LABEL[importance]}
+                      </option>
+                    ))}
+                  </select>
                   <label className="sr-only" htmlFor={`task-${task.id}-min`}>
                     Task {i + 1} minutes
                   </label>
@@ -248,6 +273,32 @@ export const BlockForm = ({ mode, initialBlock, onSubmit, onClose }: BlockFormPr
               Add
             </Button>
           </div>
+
+          <label
+            className={`mt-1 flex items-start gap-2.5 pl-7 text-sm ${rulesFrozen ? "text-muted" : "cursor-pointer text-ink-2"}`}
+          >
+            <input
+              type="checkbox"
+              checked={ordered}
+              disabled={rulesFrozen}
+              onChange={(e) => setOrdered(e.target.checked)}
+              className="mt-0.5 h-[18px] w-[18px] shrink-0 accent-ink"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="font-medium">Tasks must be finished in this order</span>
+              <span className="text-xs text-muted">
+                {rulesFrozen
+                  ? "Set when the block started, so it can no longer change."
+                  : "Finishing a task while an earlier one is still open then counts as a deviation."}
+              </span>
+            </span>
+          </label>
+          {tasks.length > 0 && (
+            <p className="m-0 pl-7 text-xs leading-relaxed text-muted">
+              Importance sets what a missed task does to fidelity. Critical: the plan was not followed. Optional: nothing
+              is lost.
+            </p>
+          )}
         </div>
 
         {(tasks.length > 0 || budget > 0) && (

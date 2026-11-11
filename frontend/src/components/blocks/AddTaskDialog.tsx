@@ -1,7 +1,14 @@
 import { useState, type FormEvent } from "react";
 import type { TaskId } from "../../sei/domain/ids";
+import {
+  DEFAULT_IMPORTANCE,
+  IMPORTANCES,
+  RULES_FOR,
+  type Importance,
+} from "../../sei/domain/procedure";
 import type { BlockView } from "../../sei/session/seiSessionContext";
 import { useSeiStore } from "../../sei/store/seiStoreContext";
+import { IMPORTANCE_LABEL, IMPORTANCE_NOTE } from "../../sei/view/explain";
 import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
 import { minutesToSeconds } from "../../utils";
@@ -17,6 +24,7 @@ export const AddTaskDialog = ({ view, onClose, onPlanChanged }: AddTaskDialogPro
   const { savePlan, generateId } = useSeiStore();
   const [name, setName] = useState("");
   const [minutes, setMinutes] = useState("");
+  const [importance, setImportance] = useState<Importance>(DEFAULT_IMPORTANCE);
   const valid = name.trim().length > 0 && Number(minutes) > 0;
 
   const submit = (e: FormEvent) => {
@@ -29,6 +37,7 @@ export const AddTaskDialog = ({ view, onClose, onPlanChanged }: AddTaskDialogPro
       blockId: block.id,
       order: tasks.length ? Math.max(...tasks.map((t) => t.order)) + 1 : 0,
       plannedDuration: minutesToSeconds(Number(minutes)),
+      ...RULES_FOR[importance],
     };
     savePlan({ ...block, taskIds: [...block.taskIds, task.id] }, [...tasks, task]);
     onPlanChanged?.();
@@ -66,6 +75,24 @@ export const AddTaskDialog = ({ view, onClose, onPlanChanged }: AddTaskDialogPro
               className="h-11 rounded-lg border border-line-strong px-3 font-mono text-sm outline-none focus:border-ink"
             />
           </div>
+        </div>
+        <div className="flex flex-col gap-2">
+          <label htmlFor="add-task-importance" className="text-[13px] font-semibold">
+            Importance
+          </label>
+          <select
+            id="add-task-importance"
+            value={importance}
+            onChange={(e) => setImportance(e.target.value as Importance)}
+            className="h-11 rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-ink"
+          >
+            {IMPORTANCES.map((option) => (
+              <option key={option} value={option}>
+                {IMPORTANCE_LABEL[option]}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-muted">{IMPORTANCE_NOTE[importance]}</span>
         </div>
         <div className="flex justify-end gap-2.5">
           <Button onClick={onClose}>Cancel</Button>

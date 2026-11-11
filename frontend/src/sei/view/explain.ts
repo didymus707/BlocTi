@@ -6,7 +6,12 @@ import {
   type Verdict,
 } from "../domain/conformance";
 import type { ExecutionMetrics } from "../domain/metrics";
-import { SEVERITIES, type Procedure, type Severity } from "../domain/procedure";
+import {
+  SEVERITIES,
+  type Importance,
+  type Procedure,
+  type Severity,
+} from "../domain/procedure";
 import { formatDuration, formatSignedDuration, plural } from "../../utils";
 
 // Plain-language readings of the metrics, shown next to the numbers.
@@ -35,6 +40,21 @@ export const SEVERITY_LABEL: Record<Severity, string> = {
   minor: "Minor",
   major: "Major",
   critical: "Critical",
+};
+
+export const IMPORTANCE_LABEL: Record<Importance, string> = {
+  critical: "Critical",
+  required: "Required",
+  minor: "Minor",
+  optional: "Optional",
+};
+
+// what leaving the task undone does to the verdict
+export const IMPORTANCE_NOTE: Record<Importance, string> = {
+  critical: "Missing it means the plan was not followed.",
+  required: "Missing it is a major deviation.",
+  minor: "Missing it is a minor deviation.",
+  optional: "Costs nothing when left out.",
 };
 
 // 3 -> "3", 0.48 -> "0.5", 0.02 -> "<0.1"

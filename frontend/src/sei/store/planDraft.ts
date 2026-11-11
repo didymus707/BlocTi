@@ -1,6 +1,7 @@
 import { DEV_USER_ID } from "../domain/events";
 import type { BlockId, IdGenerator, TaskId } from "../domain/ids";
 import type { BlockPlan, TaskPlan } from "../domain/plan";
+import { RULES_FOR, importanceOf, planRulesOf, type Importance } from "../domain/procedure";
 import { minutesToSeconds, secondsToMinutes } from "../../utils";
 
 // what the block form edits: minutes, in display order
@@ -8,21 +9,25 @@ export interface DraftTask {
   id: string;
   name: string;
   minutes: number;
+  importance: Importance;
 }
 
 export interface PlanDraft {
   name: string;
   plannedMinutes: number;
+  ordered: boolean; // steps must be finished in this order
   tasks: DraftTask[];
 }
 
 export const draftFromPlan = (block: BlockPlan, tasks: TaskPlan[]): PlanDraft => ({
   name: block.name,
   plannedMinutes: secondsToMinutes(block.plannedDuration),
+  ordered: planRulesOf(block.rules).ordered,
   tasks: tasks.map((t) => ({
     id: t.id,
     name: t.name,
     minutes: secondsToMinutes(t.plannedDuration),
+    importance: importanceOf(t),
   })),
 });
 
@@ -41,6 +46,7 @@ export const planFromDraft = (
       blockId: id,
       order,
       plannedDuration: minutesToSeconds(t.minutes),
+      ...RULES_FOR[t.importance],
     }));
   return {
     block: {
@@ -51,6 +57,11 @@ export const planFromDraft = (
       taskIds: tasks.map((t) => t.id),
       createdAt,
       plannedDuration: minutesToSeconds(draft.plannedMinutes),
+      // the form only edits the order rule; an edit keeps the block's time band
+      rules: planRulesOf({
+        ...(isEdit ? existing.rules : undefined),
+        ordered: draft.ordered,
+      }),
     },
     tasks,
   };
