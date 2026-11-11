@@ -1,13 +1,32 @@
 import { toast } from "react-toastify";
 import type { TaskId } from "../../sei/domain/ids";
+import { DEFAULT_IMPORTANCE, importanceOf, type Importance } from "../../sei/domain/procedure";
 import { orderedTaskStates, type TaskExecutionState } from "../../sei/domain/projection";
 import type { BlockActions, BlockView } from "../../sei/session/seiSessionContext";
 import { useSeiStore } from "../../sei/store/seiStoreContext";
+import { IMPORTANCE_LABEL, IMPORTANCE_NOTE } from "../../sei/view/explain";
 import { Button } from "../../ui/Button";
 import { CloseIcon, PlusIcon } from "../../ui/icons";
 import { Progress } from "../../ui/Progress";
 import { TaskStateIcon } from "../../ui/TaskStateIcon";
 import { formatClock, formatDuration } from "../../utils";
+
+// only the tasks that differ from a plain required one carry a tag
+const TAG_STYLE: Record<Importance, string> = {
+  critical: "border-ink text-ink",
+  required: "border-line text-muted",
+  minor: "border-line text-muted",
+  optional: "border-dashed border-line-strong text-muted",
+};
+
+const ImportanceTag = ({ importance }: { importance: Importance }) => (
+  <span
+    title={IMPORTANCE_NOTE[importance]}
+    className={`shrink-0 rounded-full border px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider ${TAG_STYLE[importance]}`}
+  >
+    {IMPORTANCE_LABEL[importance]}
+  </span>
+);
 
 const warnIfRejected = (events: unknown[], message: string) => {
   if (events.length === 0) toast.warn(message);
@@ -40,6 +59,7 @@ export const PlanList = ({
     const touched = task.startedAt !== null || task.status !== "pending";
     const inPlan = tasks.some((t) => t.id === task.taskId);
     const tone = task.status === "running" ? "live" : task.status === "paused" ? "paused" : "recorded";
+    const importance = importanceOf(task);
     return (
       <li
         key={task.taskId}
@@ -48,12 +68,15 @@ export const PlanList = ({
         <TaskStateIcon status={task.status} />
         {/* on a phone the numbers and actions wrap under the title */}
         <div className="flex min-w-0 flex-[1_1_180px] flex-col gap-1.5">
-          <span
-            className={`truncate text-sm ${isActive ? "font-semibold" : "font-medium"} ${
-              task.status === "completed" ? "text-ink-2 line-through" : task.status === "skipped" ? "text-muted" : ""
-            }`}
-          >
-            {task.title}
+          <span className="flex min-w-0 items-center gap-2">
+            <span
+              className={`truncate text-sm ${isActive ? "font-semibold" : "font-medium"} ${
+                task.status === "completed" ? "text-ink-2 line-through" : task.status === "skipped" ? "text-muted" : ""
+              }`}
+            >
+              {task.title}
+            </span>
+            {importance !== DEFAULT_IMPORTANCE && <ImportanceTag importance={importance} />}
           </span>
           {task.status === "skipped" ? (
             <span className="text-xs text-muted">skipped{task.elapsedSec > 0 ? ` after ${formatDuration(task.elapsedSec)}` : ""}</span>
@@ -130,7 +153,14 @@ export const PlanList = ({
   return (
     <section aria-label="Plan" className="overflow-hidden rounded-section border border-line bg-surface">
       <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
-        <h2 className="m-0 text-[15px] font-semibold">Plan</h2>
+        <div className="flex items-baseline gap-2.5">
+          <h2 className="m-0 text-[15px] font-semibold">Plan</h2>
+          {projection.rules.ordered && (
+            <span className="label-caps" title="Finishing a task while an earlier one is still open is a deviation">
+              Order enforced
+            </span>
+          )}
+        </div>
         <Button size="sm" variant="quiet" icon={<PlusIcon size={14} />} onClick={onAddTask}>
           Add task
         </Button>

@@ -139,6 +139,11 @@ describe("BlocTi app on SEI", () => {
     await settle();
     await openBlock("Release");
 
+    // the plan shows the rules the run will be checked against
+    const plan = within(screen.getByRole("region", { name: "Plan" }));
+    expect(plan.getByText("Order enforced")).toBeInTheDocument();
+    expect(plan.getByText("Critical")).toBeInTheDocument();
+
     // ship first, never run the tests
     click("Start session");
     await waitFor(() => expect(currentTask()).toBe("Run tests"));
