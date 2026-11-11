@@ -10,7 +10,7 @@
 | `StopFailure` | `TaskSkipped`, `BlockPaused` *(inferred)* |
 | `SessionEnd` | `BlockCompleted` |
 
-Every event is `actor: "agent"`, `source: "agent_hook"`. Pauses are marked `evidence: "inferred"` because nobody saw the human stop working. The adapter deduces it. The plan is inferred afterwards: each prompt becomes a task with no estimate. For agent sessions, fidelity therefore only means how many turns ran to completion, and the app never averages it with timed blocks.
+Every event is `actor: "agent"`, `source: "agent_hook"`. Pauses are marked `evidence: "inferred"` because nobody saw the human stop working. The adapter deduces it. The plan is inferred afterwards: each prompt becomes a task with no estimate. With no procedure written ahead of the run, there is nothing to check conformance against, so an agent session shows turn completion (how many turns ran to the end) instead of fidelity. The app never averages it with timed blocks.
 
 The script prints nothing and always exits 0, so it never blocks Claude or adds to its context. If the API is down, requests wait in `~/.blocti/claude-code/<session>.json` and are sent with the next hook. They keep the same `Idempotency-Key`, so they are never stored twice.
 

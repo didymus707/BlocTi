@@ -165,8 +165,8 @@ const AgentView = ({ view }: { view: BlockView }) => {
         <InfoIcon size={20} className="mt-px shrink-0 text-ink-2" />
         <p className="m-0 text-sm leading-relaxed text-ink-2">
           <strong className="text-ink">The plan was inferred afterwards.</strong> Each prompt became a task when it was sent,
-          with no estimate, so time accuracy and order don't apply. Turn completion is the honest number here, and it is never
-          averaged with your timed blocks. This block is read-only.
+          so there was no procedure written ahead of the run to check it against. Turn completion is the honest number here,
+          and it is never averaged with your timed blocks. This block is read-only.
         </p>
       </section>
       <section aria-label="Session numbers" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -191,7 +191,7 @@ const AgentView = ({ view }: { view: BlockView }) => {
           }
           hint={interrupted ? `${interrupted} interrupted` : "none interrupted"}
         />
-        <MetricTile label="Turn completion" value={formatPercent(metrics.completionRate)} hint="this session's fidelity" />
+        <MetricTile label="Turn completion" value={formatPercent(metrics.completionRate)} hint="turns that ran to the end" />
       </section>
       <TraceCard view={view} now={now} agent />
       <section aria-label="Turns" className="overflow-hidden rounded-section border border-line bg-surface">
