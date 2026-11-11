@@ -51,6 +51,32 @@ export const stepRulesOf = (source: Partial<StepRules> | undefined): StepRules =
   severity: isSeverity(source?.severity) ? source.severity : DEFAULT_STEP_RULES.severity,
 });
 
+// IMPORTANCE: the two step rules as one choice, the way a person would say
+// it. The form offers these four; the two rules underneath allow two more
+// (an optional step that is major or critical when finished out of order),
+// which read back as "optional".
+export type Importance = "critical" | "required" | "minor" | "optional";
+
+export const IMPORTANCES: readonly Importance[] = ["critical", "required", "minor", "optional"];
+
+export const DEFAULT_IMPORTANCE: Importance = "required";
+
+export const RULES_FOR: Record<Importance, StepRules> = {
+  critical: { required: true, severity: "critical" },
+  required: { required: true, severity: "major" },
+  minor: { required: true, severity: "minor" },
+  // an optional step costs nothing when left out; its severity only prices
+  // finishing it out of order
+  optional: { required: false, severity: "minor" },
+};
+
+export const importanceOf = (source: Partial<StepRules> | undefined): Importance => {
+  const { required, severity } = stepRulesOf(source);
+  if (!required) return "optional";
+  if (severity === "critical") return "critical";
+  return severity === "minor" ? "minor" : "required";
+};
+
 export const planRulesOf = (source: Partial<PlanRules> | undefined): PlanRules => {
   const tolerance = source?.timeTolerance;
   return {

@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_IMPORTANCE,
   DEFAULT_PLAN_RULES,
   DEFAULT_STEP_RULES,
+  IMPORTANCES,
   MAX_TIME_TOLERANCE,
+  RULES_FOR,
+  importanceOf,
   planRulesOf,
   stepRulesOf,
 } from "../procedure";
@@ -34,6 +38,23 @@ describe("stepRulesOf", () => {
       typeof stepRulesOf
     >[0];
     expect(stepRulesOf(malformed)).toEqual(DEFAULT_STEP_RULES);
+  });
+});
+
+describe("importance", () => {
+  it("stands for a pair of step rules and reads back from them", () => {
+    for (const importance of IMPORTANCES) {
+      expect(importanceOf(RULES_FOR[importance])).toBe(importance);
+    }
+  });
+
+  it("is 'required' for a task that says nothing, matching the default rules", () => {
+    expect(importanceOf(undefined)).toBe(DEFAULT_IMPORTANCE);
+    expect(RULES_FOR[DEFAULT_IMPORTANCE]).toEqual(DEFAULT_STEP_RULES);
+  });
+
+  it("reads any step that need not be done as optional, whatever its severity", () => {
+    expect(importanceOf({ required: false, severity: "critical" })).toBe("optional");
   });
 });
 
