@@ -17,6 +17,7 @@ model Block {
   name            String
   plannedDuration Int      @default(0) // seconds
   tasks           Json     @default("[]") // TaskPlan[] in order
+  rules           Json? // PlanRules; null = the defaults
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

@@ -37,6 +37,13 @@ const block = (id: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
+// a plan snapshot carrying procedure rules
+const STEP = { taskId: "t1", title: "Read", plannedDuration: 600 };
+const plannedWith = (extra: Record<string, unknown>) => ({
+  ...wire(sequence(ev.planned(0)))[0],
+  ...extra,
+});
+
 beforeAll(async () => {
   await prisma.$connect();
 });
@@ -193,6 +200,9 @@ describe("POST /events", () => {
       ["a bad timestamp", { events: [block("b", { occurredAt: "yesterday" })] }],
       ["events for two blocks", { events: [block("b1"), block("b2")] }],
       ["a negative duration", { events: [{ ...wire(sequence(ev.planned(0)))[0], plannedDuration: -5 }] }],
+      ["an unknown severity", { events: [plannedWith({ tasks: [{ ...STEP, severity: "urgent" }] })] }],
+      ["a time tolerance above 50%", { events: [plannedWith({ rules: { ordered: true, timeTolerance: 0.9 } })] }],
+      ["half a set of rules", { events: [plannedWith({ rules: { ordered: true } })] }],
     ])("rejects %s", async (_name, body) => {
       const res = await request(app).post("/events").set("Idempotency-Key", "k").send(body);
       expect(res.status).toBe(400);
@@ -208,6 +218,21 @@ describe("POST /events", () => {
         .send("{nope");
       expect(res.status).toBe(400);
       expect(res.body.code).toBe("invalid_json");
+    });
+
+    it("stores the procedure rules a plan snapshot carries", async () => {
+      const snapshot = plannedWith({
+        tasks: [
+          { ...STEP, required: true, severity: "critical" },
+          { taskId: "t2", title: "Stretch", plannedDuration: 0, required: false, severity: "minor" },
+        ],
+        rules: { ordered: true, timeTolerance: 0.25 },
+      });
+      const res = await post([snapshot]);
+      expect(res.status).toBe(201);
+      expect(res.body.events[0]).toMatchObject({ tasks: snapshot.tasks, rules: snapshot.rules });
+      const listed = await request(app).get("/events");
+      expect(listed.body.events[0]).toMatchObject({ tasks: snapshot.tasks, rules: snapshot.rules });
     });
 
     it("accepts every event type the frontend can produce", async () => {
@@ -298,6 +323,42 @@ describe("/blocks", () => {
     const res = await request(app).get("/blocks");
     expect(res.body.blocks[0].name).toBe("Renamed");
     expect(res.body.tasks).toHaveLength(1);
+  });
+
+  describe("procedure rules", () => {
+    const withRules = {
+      block: { ...plan.block, rules: { ordered: true, timeTolerance: 0.25 } },
+      tasks: [
+        { ...plan.tasks[0], required: false, severity: "minor" },
+        { ...plan.tasks[1], required: true, severity: "critical" },
+      ],
+    };
+
+    it("saves and lists the rules on the block and on each task", async () => {
+      expect((await request(app).put("/blocks/block-1").send(withRules)).status).toBe(200);
+      const res = await request(app).get("/blocks");
+      expect(res.body.blocks[0].rules).toEqual({ ordered: true, timeTolerance: 0.25 });
+      expect(res.body.tasks).toEqual([withRules.tasks[1], withRules.tasks[0]]);
+    });
+
+    it("a plan saved again without rules goes back to the defaults", async () => {
+      await request(app).put("/blocks/block-1").send(withRules);
+      await request(app).put("/blocks/block-1").send(plan);
+      const res = await request(app).get("/blocks");
+      expect(res.body.blocks[0]).not.toHaveProperty("rules");
+      expect(res.body.tasks[0]).not.toHaveProperty("severity");
+    });
+
+    it.each([
+      ["an unknown severity", { ...withRules, tasks: [{ ...plan.tasks[0], severity: "urgent" }] }],
+      ["a non-boolean required", { ...withRules, tasks: [{ ...plan.tasks[0], required: "yes" }] }],
+      ["a negative tolerance", { ...withRules, block: { ...plan.block, rules: { ordered: false, timeTolerance: -0.1 } } }],
+      ["an unknown rule", { ...withRules, block: { ...plan.block, rules: { ordered: false, timeTolerance: 0.1, strict: true } } }],
+    ])("rejects %s", async (_name, body) => {
+      const res = await request(app).put("/blocks/block-1").send(body);
+      expect(res.status).toBe(400);
+      expect(await prisma.block.count()).toBe(0);
+    });
   });
 
   it("rejects mismatched ids", async () => {

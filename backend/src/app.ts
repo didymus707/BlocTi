@@ -1,6 +1,6 @@
 import express, { type Request } from "express";
 import cors from "cors";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { errorHandler, HttpError } from "./errors.js";
 import { appendEvents, listEvents, type StoreConfig } from "./eventStore.js";
 import {
@@ -43,6 +43,7 @@ export function createApp(prisma: PrismaClient, config: StoreConfig) {
           taskIds: tasks.map((t) => t.id),
           createdAt: b.createdAt.toISOString(),
           plannedDuration: b.plannedDuration,
+          ...(b.rules ? { rules: b.rules } : {}),
         };
       }),
       tasks: rows.flatMap((b) => b.tasks as unknown[]),
@@ -67,6 +68,8 @@ export function createApp(prisma: PrismaClient, config: StoreConfig) {
       name: block.name,
       plannedDuration: block.plannedDuration,
       tasks: ordered,
+      // a plan saved without rules goes back to the defaults
+      rules: block.rules ?? Prisma.DbNull,
     };
     await prisma.block.upsert({
       where: { id: block.id },
