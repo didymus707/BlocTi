@@ -6,7 +6,9 @@ import {
   OTHER_BLOCK,
   PLAN,
   PLAN_TASKS,
+  SNAPSHOT_TASKS,
   T1,
+  T2,
   at,
   ev,
   idSequence,
@@ -93,6 +95,19 @@ describe("ops", () => {
     expect(plan?.block).toMatchObject({ id: BLOCK, name: PLAN.name, plannedDuration: 1800 });
     expect(plan?.tasks.map((t) => t.id)).toEqual(PLAN_TASKS.map((t) => t.id));
     expect(allPlans(state)).toHaveLength(1);
+  });
+
+  it("a plan rebuilt from a snapshot keeps the snapshot's rules", () => {
+    const rules = { ordered: true, timeTolerance: 0.25 };
+    const tasks = [{ ...SNAPSHOT_TASKS[0], severity: "critical" as const }, SNAPSHOT_TASKS[1]];
+    const events = sequence(ev.planned(0, tasks, { rules }), ev.blockStarted(0));
+    const state = applyOp(EMPTY_STATE, { kind: "appendEvents", id: "k", blockId: BLOCK, events });
+    const plan = planFor(state, BLOCK);
+    expect(plan?.block.rules).toEqual(rules);
+    expect(plan?.tasks).toMatchObject([
+      { id: T1, required: true, severity: "critical" },
+      { id: T2, required: true, severity: "major" },
+    ]);
   });
 
   it("returns null for an unknown block", () => {

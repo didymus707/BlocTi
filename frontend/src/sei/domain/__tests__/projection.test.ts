@@ -496,6 +496,70 @@ describe("projectBlock", () => {
     });
   });
 
+  describe("procedure rules", () => {
+    const STRICT = { ordered: true, timeTolerance: 0.25 };
+    const bare = SNAPSHOT_TASKS.map(({ taskId, title, plannedDuration }) => ({
+      taskId,
+      title,
+      plannedDuration,
+    }));
+
+    it("a plain plan gets the defaults: every step required and major, order free", () => {
+      const p = project([], 0);
+      expect(p.rules).toEqual({ ordered: false, timeTolerance: 0.15 });
+      expect(p.taskStates[T1]).toMatchObject({ required: true, severity: "major" });
+    });
+
+    it("reads the rules from the plan while the block is idle", () => {
+      const tasks = PLAN_TASKS.map((t) =>
+        t.id === T2 ? { ...t, required: false, severity: "minor" as const } : t,
+      );
+      const p = projectBlock({ ...PLAN, rules: STRICT }, tasks, [], at(0));
+      expect(p.rules).toEqual(STRICT);
+      expect(p.taskStates[T2]).toMatchObject({ required: false, severity: "minor" });
+      expect(p.taskStates[T1]).toMatchObject({ required: true, severity: "major" });
+    });
+
+    it("once started, judges by the snapshot, not by the edited plan", () => {
+      const snapshot = SNAPSHOT_TASKS.map((t) =>
+        t.taskId === T1 ? { ...t, severity: "critical" as const } : t,
+      );
+      const events = sequence(
+        ev.planned(0, snapshot, { rules: STRICT }),
+        ev.blockStarted(0),
+        ev.taskStarted(T1, 0),
+      );
+      const softened = PLAN_TASKS.map((t) => ({ ...t, required: false }));
+      const p = projectBlock({ ...PLAN, rules: undefined }, softened, events, at(10));
+      expect(p.rules).toEqual(STRICT);
+      expect(p.taskStates[T1]).toMatchObject({ required: true, severity: "critical" });
+    });
+
+    it("replays a snapshot that carries no rules with the defaults", () => {
+      // older traces and the agent hook send snapshots without rules
+      const [planned, ...rest] = sequence(ev.planned(0, bare), ev.blockStarted(0));
+      const { rules: _rules, ...withoutRules } = planned as SeiEvent & { rules?: unknown };
+      const p = project([withoutRules as SeiEvent, ...rest], 10);
+      expect(p.rules).toEqual({ ordered: false, timeTolerance: 0.15 });
+      expect(p.taskStates[T3]).toMatchObject({ required: true, severity: "major" });
+    });
+
+    it("freezes the block's rules once execution starts", () => {
+      const p = project(
+        sequence(...started(0), ev.planned(10, SNAPSHOT_TASKS, { rules: STRICT })),
+        20,
+      );
+      expect(p.rules.ordered).toBe(false);
+    });
+
+    it("a replan can change a pending step's rules but not a started step's", () => {
+      const replanned = SNAPSHOT_TASKS.map((t) => ({ ...t, required: false }));
+      const p = project(sequence(...started(0), ev.planned(10, replanned)), 20);
+      expect(p.taskStates[T1].required).toBe(true); // already running
+      expect(p.taskStates[T2].required).toBe(false); // still pending
+    });
+  });
+
   describe("determinism", () => {
     const events = sequence(
       ...started(0),

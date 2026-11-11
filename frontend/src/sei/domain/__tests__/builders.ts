@@ -7,6 +7,11 @@ import {
 } from "../events";
 import type { BlockId, EventId, SessionId, TaskId, UserId } from "../ids";
 import type { BlockPlan, TaskPlan } from "../plan";
+import {
+  DEFAULT_PLAN_RULES,
+  DEFAULT_STEP_RULES,
+  type PlanRules,
+} from "../procedure";
 
 export const T0 = "2026-11-08T09:00:00.000Z";
 export const at = (sec: number) =>
@@ -37,10 +42,12 @@ export const PLAN: BlockPlan = {
   plannedDuration: 1800,
 };
 
+// what snapshotPlan writes for PLAN: the default rules, spelled out
 export const SNAPSHOT_TASKS: TaskSnapshot[] = PLAN_TASKS.map((t) => ({
   taskId: t.id,
   title: t.name,
   plannedDuration: t.plannedDuration,
+  ...DEFAULT_STEP_RULES,
 }));
 
 type Unsequenced = SeiEvent extends infer E
@@ -67,13 +74,14 @@ export const ev = {
   planned: (
     sec: number,
     tasks: TaskSnapshot[] = SNAPSHOT_TASKS,
-    extra: { name?: string; plannedDuration?: number } = {},
+    extra: { name?: string; plannedDuration?: number; rules?: PlanRules } = {},
   ): Unsequenced => ({
     ...base("BlockPlanned", sec),
     type: "BlockPlanned",
     name: extra.name ?? PLAN.name,
     plannedDuration: extra.plannedDuration ?? PLAN.plannedDuration,
     tasks,
+    rules: extra.rules ?? DEFAULT_PLAN_RULES,
   }),
   blockStarted: (sec: number): Unsequenced => ({
     ...base("BlockStarted", sec),

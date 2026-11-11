@@ -1,4 +1,5 @@
 import type { BlockId, EventId, SessionId, TaskId, UserId } from "./ids";
+import type { PlanRules, Severity } from "./procedure";
 
 // who produced the event
 export type Actor = "human" | "agent";
@@ -28,6 +29,8 @@ export interface TaskSnapshot {
   taskId: TaskId;
   title: string;
   plannedDuration: number; // in seconds
+  required?: boolean; // absent = required
+  severity?: Severity; // absent = major
 }
 
 // BlockPlannedEvent: a frozen copy of the plan, so later plan edits cannot rewrite history
@@ -36,6 +39,7 @@ export interface BlockPlanned extends BaseEvent {
   name: string;
   plannedDuration: number; // in seconds
   tasks: TaskSnapshot[];
+  rules?: PlanRules; // absent = order free, default tolerance
 }
 
 export interface BlockStarted extends BaseEvent {

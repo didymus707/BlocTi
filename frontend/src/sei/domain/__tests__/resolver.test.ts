@@ -259,6 +259,43 @@ describe("resolveCommand", () => {
     });
   });
 
+  describe("procedure rules in the snapshot", () => {
+    it("writes the default rules out in full for a plain plan", () => {
+      const [planned] = resolve([], 0, { type: "StartBlock", sessionId: SESSION });
+      expect(planned).toMatchObject({
+        rules: { ordered: false, timeTolerance: 0.15 },
+        tasks: PLAN_TASKS.map((t) => ({
+          taskId: t.id,
+          title: t.name,
+          plannedDuration: t.plannedDuration,
+          required: true,
+          severity: "major",
+        })),
+      });
+    });
+
+    it("carries the plan's own rules into the snapshot", () => {
+      const rules = { ordered: true, timeTolerance: 0.3 };
+      const tasks = PLAN_TASKS.map((t) =>
+        t.id === T3 ? { ...t, required: false, severity: "minor" as const } : t,
+      );
+      const [planned] = resolveCommand(
+        { ...PLAN, rules },
+        tasks,
+        [],
+        cmd(0, { type: "StartBlock", sessionId: SESSION }),
+      );
+      expect(planned).toMatchObject({
+        rules,
+        tasks: [
+          { taskId: T1, required: true, severity: "major" },
+          { taskId: T2, required: true, severity: "major" },
+          { taskId: T3, required: false, severity: "minor" },
+        ],
+      });
+    });
+  });
+
   describe("ReplanBlock", () => {
     it("re-snapshots the current plan into a live block", () => {
       const withNewTask = [

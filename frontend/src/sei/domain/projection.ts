@@ -6,6 +6,12 @@ import type {
 } from "./events";
 import type { BlockId, SessionId, TaskId } from "./ids";
 import { tasksForBlock, type BlockPlan, type TaskPlan } from "./plan";
+import {
+  planRulesOf,
+  stepRulesOf,
+  type PlanRules,
+  type StepRules,
+} from "./procedure";
 
 // EXECUTION PROJECTION
 export type ExecutionStatus =
@@ -26,7 +32,7 @@ export type TaskStatus =
 
 export type PauseKind = "task" | "block";
 
-export interface TaskExecutionState {
+export interface TaskExecutionState extends StepRules {
   taskId: TaskId;
   title: string;
   plannedSec: number;
@@ -55,6 +61,7 @@ export interface BlockExecutionProjection {
   blockId: BlockId;
   name: string;
   plannedSec: number;
+  rules: PlanRules; // frozen at start, like the budget
   sessionId: SessionId | null;
   status: ExecutionStatus;
   activeTaskId: TaskId | null;
@@ -105,8 +112,10 @@ const newTaskState = (
   taskId: TaskId,
   title: string,
   plannedSec: number,
+  rules: StepRules,
 ): TaskExecutionState =>
   withDerivedTime({
+    ...rules,
     taskId,
     title,
     plannedSec,
@@ -134,6 +143,7 @@ export function projectBlock(
     blockId: block.id,
     name: block.name,
     plannedSec: block.plannedDuration,
+    rules: planRulesOf(block.rules),
     sessionId: null,
     status: "idle",
     activeTaskId: null,
@@ -152,7 +162,7 @@ export function projectBlock(
     taskStates: Object.fromEntries(
       seedTasks.map((t) => [
         t.id,
-        newTaskState(t.id, t.name, t.plannedDuration),
+        newTaskState(t.id, t.name, t.plannedDuration, stepRulesOf(t)),
       ]),
     ) as Record<TaskId, TaskExecutionState>,
     eventCount: 0,
@@ -252,8 +262,11 @@ export function projectBlock(
 
   const applySnapshot = (snapshot: BlockPlanned) => {
     state.name = snapshot.name;
-    // the budget is frozen once execution starts
-    if (state.status === "idle") state.plannedSec = snapshot.plannedDuration;
+    // the budget and the block's rules are frozen once execution starts
+    if (state.status === "idle") {
+      state.plannedSec = snapshot.plannedDuration;
+      state.rules = planRulesOf(snapshot.rules);
+    }
 
     const snapshotIds = [...new Set(snapshot.tasks.map((t) => t.taskId))];
     // tasks with history survive a replan even if the new plan dropped them
@@ -269,7 +282,12 @@ export function projectBlock(
       nextStates[id] =
         existing && hasHistory(existing)
           ? existing
-          : newTaskState(id, planned.title, planned.plannedDuration);
+          : newTaskState(
+              id,
+              planned.title,
+              planned.plannedDuration,
+              stepRulesOf(planned),
+            );
     }
 
     state.taskOrder = [...kept, ...snapshotIds];
