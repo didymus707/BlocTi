@@ -1,11 +1,100 @@
+import {
+  SEVERITY_POINTS,
+  type ConformanceReport,
+  type Deviation,
+  type DeviationKind,
+  type Verdict,
+} from "../domain/conformance";
 import type { ExecutionMetrics } from "../domain/metrics";
 import {
   orderedTaskStates,
   type BlockExecutionProjection,
 } from "../domain/projection";
+import { SEVERITIES, type Procedure, type Severity } from "../domain/procedure";
 import { formatDuration, formatSignedDuration, plural } from "../../utils";
 
 // Plain-language readings of the metrics, shown next to the numbers.
+
+export const VERDICT_LABEL: Record<Verdict, string> = {
+  followed: "Followed",
+  minor_deviations: "Minor deviations",
+  major_deviations: "Major deviations",
+  not_followed: "Not followed",
+};
+
+export const VERDICT_NOTE: Record<Verdict, string> = {
+  followed: "Every rule in the plan held.",
+  minor_deviations: "Nothing worse than a minor rule was broken.",
+  major_deviations: "At least one major rule was broken.",
+  not_followed: "A critical rule was broken, so the plan was not followed, whatever the score.",
+};
+
+export const DEVIATION_LABEL: Record<DeviationKind, string> = {
+  missed_step: "Missed step",
+  out_of_order: "Out of order",
+  off_estimate: "Off estimate",
+};
+
+export const SEVERITY_LABEL: Record<Severity, string> = {
+  minor: "Minor",
+  major: "Major",
+  critical: "Critical",
+};
+
+// 3 -> "3", 0.48 -> "0.5", 0.02 -> "<0.1"
+export const formatPoints = (points: number): string => {
+  const rounded = Math.round(points * 10) / 10;
+  return rounded === 0 && points > 0 ? "<0.1" : String(rounded);
+};
+
+export const describeDeviation = (deviation: Deviation): string => {
+  switch (deviation.kind) {
+    case "missed_step":
+      return deviation.outcome === "skipped"
+        ? `${deviation.title} was skipped.`
+        : `${deviation.title} was not finished when the block ended.`;
+    case "out_of_order":
+      return `${deviation.title} was finished while ${deviation.aheadOf.title} was still open.`;
+    case "off_estimate": {
+      const { plannedSec, actualSec } = deviation;
+      const percent = Math.round((Math.abs(actualSec - plannedSec) / plannedSec) * 100);
+      const direction = actualSec > plannedSec ? "over" : "under";
+      return `${deviation.title} took ${formatDuration(actualSec)}, ${percent}% ${direction} its ${formatDuration(plannedSec)} estimate.`;
+    }
+  }
+};
+
+// where the score comes from, in one line
+export const pointsSummary = (report: ConformanceReport): string => {
+  const rules = plural(report.ruleCount, "rule");
+  if (report.pointsTotal === 0) return "This plan has no rules to check.";
+  if (report.pointsLost === 0) {
+    return `All ${formatPoints(report.pointsTotal)} points kept across ${rules}.`;
+  }
+  const kept = report.pointsTotal - report.pointsLost;
+  return `Kept ${formatPoints(kept)} of ${formatPoints(report.pointsTotal)} points across ${rules}.`;
+};
+
+// what the run was checked against
+export const procedureSummary = (procedure: Procedure): string => {
+  const required = procedure.steps.filter((s) => s.required).length;
+  const optional = procedure.steps.length - required;
+  const critical = procedure.steps.filter((s) => s.required && s.severity === "critical").length;
+  return [
+    plural(required, "required step"),
+    critical > 0 && `${critical} critical`,
+    optional > 0 && `${optional} optional`,
+    procedure.ordered ? "order enforced" : "any order",
+    `on time within ${Math.round(procedure.timeTolerance * 100)}%`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+};
+
+// what breaking a rule costs: "minor 1 · major 3 · critical 9"
+export const POINTS_KEY = SEVERITIES.map(
+  (severity) => `${severity} ${SEVERITY_POINTS[severity]}`,
+).join(" · ");
 
 export const completionNote = (projection: BlockExecutionProjection): string => {
   const tasks = orderedTaskStates(projection);

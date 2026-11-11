@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { conformanceOf, procedureOf } from "../../domain/conformance";
 import { computeMetrics } from "../../domain/metrics";
 import { projectBlock } from "../../domain/projection";
 import type { SeiEvent } from "../../domain/events";
 import {
   PLAN,
   PLAN_TASKS,
+  SNAPSHOT_TASKS,
   T1,
   T2,
   T3,
@@ -14,7 +16,17 @@ import {
   started,
 } from "../../domain/__tests__/builders";
 import { buildTrace } from "../trace";
-import { completionNote, driftInsight, orderNote, timeAccuracyNote } from "../explain";
+import {
+  POINTS_KEY,
+  completionNote,
+  describeDeviation,
+  driftInsight,
+  orderNote,
+  timeAccuracyNote,
+  formatPoints,
+  pointsSummary,
+  procedureSummary,
+} from "../explain";
 
 const project = (events: SeiEvent[], nowSec: number) =>
   projectBlock(PLAN, PLAN_TASKS, events, at(nowSec));
@@ -80,6 +92,76 @@ describe("buildTrace", () => {
   it("places the budget marker by the block's budget", () => {
     expect(buildTrace(project(sequence(...started(0)), 10), at(10)).budgetAtSec).toBe(1800);
     expect(buildTrace(project([], 10), at(10)).budgetAtSec).toBeNull();
+  });
+});
+
+describe("conformance in words", () => {
+  // An ordered plan: Read 10m, Write 5m, Review 15m. Review is finished
+  // first, Read then takes 15m, and Write is skipped.
+  const events = sequence(
+    ev.planned(0, SNAPSHOT_TASKS, { rules: { ordered: true, timeTolerance: 0.15 } }),
+    ev.blockStarted(0),
+    ev.taskStarted(T3, 0),
+    ev.taskCompleted(T3, 900),
+    ev.taskStarted(T1, 900),
+    ev.taskCompleted(T1, 1800),
+    ev.taskSkipped(T2, 1860),
+    ev.blockCompleted(1860),
+  );
+  const p = project(events, 2000);
+  const report = conformanceOf(p);
+
+  it("describes each deviation in a sentence, worst first", () => {
+    expect(report.deviations.map(describeDeviation)).toEqual([
+      "Write was skipped.",
+      "Review was finished while Read was still open.",
+      "Read took 15m, 50% over its 10m estimate.",
+    ]);
+  });
+
+  it("tells a step left unfinished apart from a skipped one", () => {
+    const stopped = conformanceOf(project(sequence(...started(0), ev.terminated(60)), 60));
+    expect(describeDeviation(stopped.deviations[0])).toBe(
+      "Read was not finished when the block ended.",
+    );
+  });
+
+  it("says which side of the estimate a step landed on", () => {
+    const early = conformanceOf(project(sequence(...started(0), ev.taskCompleted(T1, 300)), 300));
+    expect(describeDeviation(early.deviations[0])).toBe(
+      "Read took 5m, 50% under its 10m estimate.",
+    );
+  });
+
+  it("sums up where the score comes from", () => {
+    // 18 points in play; lost 7 (Write) + 3 (Review) + 0.48 (Read)
+    expect(pointsSummary(report)).toBe("Kept 7.5 of 18 points across 8 rules.");
+    const clean = conformanceOf(project(sequence(...started(0)), 10));
+    expect(pointsSummary(clean)).toBe("All 12 points kept across 6 rules.");
+  });
+
+  it("sums up the rules a run was checked against", () => {
+    expect(procedureSummary(procedureOf(p))).toBe(
+      "3 required steps · order enforced · on time within 15%",
+    );
+    expect(
+      procedureSummary({
+        ordered: false,
+        timeTolerance: 0.25,
+        steps: [
+          { taskId: T1, title: "Read", plannedSec: 600, required: true, severity: "critical" },
+          { taskId: T2, title: "Write", plannedSec: 300, required: false, severity: "minor" },
+        ],
+      }),
+    ).toBe("1 required step · 1 critical · 1 optional · any order · on time within 25%");
+    expect(POINTS_KEY).toBe("minor 1 · major 3 · critical 9");
+  });
+
+  it("formats points to one decimal", () => {
+    expect(formatPoints(3)).toBe("3");
+    expect(formatPoints(7.48)).toBe("7.5");
+    expect(formatPoints(0.02)).toBe("<0.1");
+    expect(formatPoints(0)).toBe("0");
   });
 });
 
