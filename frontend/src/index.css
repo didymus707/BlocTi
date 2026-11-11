@@ -1,1 +1,92 @@
 @import "tailwindcss";
+
+/* Instrument — BlocTi's design system.
+   Blue means live. Ink is what happened. Hatched means not working.
+   Orange is the one warning. */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-ink: #111113;
+  --color-ink-2: #45454d;
+  --color-muted: #6e6e78;
+  --color-faint: #8a8a93;
+  --color-planned: #b9b9bf;
+  --color-line: #e6e6e3;
+  --color-line-strong: #d4d4d0;
+  --color-divider: #f0f0ee;
+  --color-track: #eeeeec;
+  --color-sunken: #f1f1ef;
+  --color-paper: #f7f7f5;
+  --color-surface: #ffffff;
+
+  --color-live: #1e5bd8;
+  --color-live-strong: #1648a8;
+  --color-live-soft: #eaf1fe;
+  --color-live-line: #c9d8f6;
+  --color-live-halo: #dce7fc;
+  --color-live-tint: #f7faff;
+
+  --color-amber: #8a4b08;
+  --color-amber-mid: #e8b36a;
+  --color-amber-soft: #fdf1dc;
+
+  --color-over: #c2410c;
+  --color-over-tint: #fff8f3;
+
+  --color-night: #0e0e10;
+  --color-night-line: #2e2e33;
+  --color-night-ink: #f4f4f2;
+  --color-night-muted: #a1a1aa;
+  --color-night-live: #5b8ceb;
+  --color-night-live-text: #9db9f2;
+  --color-night-over: #f08a5d;
+
+  --radius-tile: 12px;
+  --radius-section: 14px;
+  --radius-sheet: 16px;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    margin: 0;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-live);
+    outline-offset: 2px;
+  }
+}
+
+@utility hatch-paused {
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--color-amber-mid) 0 3px,
+    var(--color-amber-soft) 3px 6px
+  );
+}
+
+@utility hatch-inferred {
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--color-planned) 0 3px,
+    var(--color-sunken) 3px 6px
+  );
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility label-caps {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}

@@ -1,6 +1,11 @@
-import type { SeiEvent } from "./events";
+import type {
+  BlockPlanned,
+  Evidence,
+  SeiEvent,
+  TerminationReason,
+} from "./events";
 import type { BlockId, SessionId, TaskId } from "./ids";
-import type { BlockPlan, TaskPlan } from "./plan";
+import { tasksForBlock, type BlockPlan, type TaskPlan } from "./plan";
 
 // EXECUTION PROJECTION
 export type ExecutionStatus =
@@ -10,245 +15,389 @@ export type ExecutionStatus =
   | "completed"
   | "terminated";
 
+// "pending" = not active and not finished. A task that was started and then
+// switched away from goes back to "pending"; startedAt tells the two apart.
+export type TaskStatus =
+  | "pending"
+  | "running"
+  | "paused"
+  | "completed"
+  | "skipped";
+
+export type PauseKind = "task" | "block";
+
 export interface TaskExecutionState {
   taskId: TaskId;
-  status: "pending" | "running" | "paused" | "completed" | "skipped";
-  elapsedSec: number;
+  title: string;
+  plannedSec: number;
+  status: TaskStatus;
+  elapsedSec: number; // focus time only
   remainingSec: number;
-  progress: number;
+  overrunSec: number;
+  progress: number; // 0-100
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+// One stretch of wall-clock time: a task in focus, or a pause. Together they
+// are the execution trace; `open` marks the interval still running at `now`.
+export interface ExecutionInterval {
+  kind: "focus" | "pause";
+  taskId: TaskId | null;
+  pauseKind: PauseKind | null;
+  evidence: Evidence;
+  from: string;
+  to: string;
+  open: boolean;
 }
 
 export interface BlockExecutionProjection {
   blockId: BlockId;
+  name: string;
+  plannedSec: number;
   sessionId: SessionId | null;
   status: ExecutionStatus;
   activeTaskId: TaskId | null;
   startedAt: string | null;
   completedAt: string | null;
   terminatedAt: string | null;
+  terminationReason: TerminationReason | null;
   isPaused: boolean;
+  pauseKind: PauseKind | null;
+  pausedSince: string | null;
+  pausedSec: number;
+  inferredPausedSec: number;
+  pauseCount: number;
+  switchCount: number;
+  taskOrder: TaskId[];
   taskStates: Record<TaskId, TaskExecutionState>;
+  eventCount: number;
+  lastEventAt: string | null;
+  intervals: ExecutionInterval[];
 }
 
+// clamped at 0 so out-of-order timestamps can never produce negative time
+const secondsBetween = (from: string, to: string): number =>
+  Math.max(0, (Date.parse(to) - Date.parse(from)) / 1000);
+
+const isFinished = (task: TaskExecutionState) =>
+  task.status === "completed" || task.status === "skipped";
+
+const hasHistory = (task: TaskExecutionState) =>
+  task.startedAt !== null || task.status !== "pending";
+
+const withDerivedTime = (task: TaskExecutionState): TaskExecutionState => {
+  const { plannedSec, elapsedSec, status } = task;
+  return {
+    ...task,
+    remainingSec: isFinished(task) ? 0 : Math.max(0, plannedSec - elapsedSec),
+    overrunSec: plannedSec > 0 ? Math.max(0, elapsedSec - plannedSec) : 0,
+    progress:
+      status === "completed"
+        ? 100
+        : plannedSec > 0
+          ? Math.min(100, (elapsedSec / plannedSec) * 100)
+          : 0,
+  };
+};
+
+const newTaskState = (
+  taskId: TaskId,
+  title: string,
+  plannedSec: number,
+): TaskExecutionState =>
+  withDerivedTime({
+    taskId,
+    title,
+    plannedSec,
+    status: "pending",
+    elapsedSec: 0,
+    remainingSec: plannedSec,
+    overrunSec: 0,
+    progress: 0,
+    startedAt: null,
+    finishedAt: null,
+  });
+
+// Same events + same now => same projection. The plan (block, tasks) only seeds
+// the projection until the stream contains a BlockPlanned snapshot; after that
+// the snapshot is the plan, so editing the plan cannot rewrite past history.
 export function projectBlock(
   block: BlockPlan,
   tasks: TaskPlan[],
   events: SeiEvent[],
-  now: string = new Date().toISOString(),
+  now: string,
 ): BlockExecutionProjection {
-  const blockTasks = tasks
-    .filter((t) => t.blockId === block.id)
-    .sort((a, b) => a.order - b.order);
+  const seedTasks = tasksForBlock(block.id, tasks);
 
-  const initialState: BlockExecutionProjection = {
+  const state: BlockExecutionProjection = {
     blockId: block.id,
+    name: block.name,
+    plannedSec: block.plannedDuration,
     sessionId: null,
     status: "idle",
     activeTaskId: null,
     startedAt: null,
     completedAt: null,
     terminatedAt: null,
+    terminationReason: null,
     isPaused: false,
-    taskStates: blockTasks.reduce(
-      (acc, task) => {
-        acc[task.id] = {
-          taskId: task.id,
-          status: "pending",
-          elapsedSec: 0,
-          remainingSec: task.plannedDuration,
-          progress: 0,
-        };
-        return acc;
-      },
-      {} as Record<TaskId, TaskExecutionState>,
-    ),
+    pauseKind: null,
+    pausedSince: null,
+    pausedSec: 0,
+    inferredPausedSec: 0,
+    pauseCount: 0,
+    switchCount: 0,
+    taskOrder: seedTasks.map((t) => t.id),
+    taskStates: Object.fromEntries(
+      seedTasks.map((t) => [
+        t.id,
+        newTaskState(t.id, t.name, t.plannedDuration),
+      ]),
+    ) as Record<TaskId, TaskExecutionState>,
+    eventCount: 0,
+    lastEventAt: null,
+    intervals: [],
   };
-  let state = { ...initialState };
-  let currentStartTime: string | null = null;
-  const orderedEvents = [...events].sort((a, b) => a.seq - b.seq);
 
-  const deltaSecHelper = (timeOne: string, timeTwo: string): number => {
-    return (new Date(timeOne).getTime() - new Date(timeTwo).getTime()) / 1000;
+  // the one open focus interval and the one open pause interval, if any
+  const open: {
+    segment: { taskId: TaskId; since: string } | null;
+    pause: { since: string; evidence: Evidence; kind: PauseKind } | null;
+  } = { segment: null, pause: null };
+
+  const record = (interval: ExecutionInterval) => {
+    if (Date.parse(interval.to) > Date.parse(interval.from)) {
+      state.intervals.push(interval);
+    }
   };
+
+  const updateTask = (taskId: TaskId, patch: Partial<TaskExecutionState>) => {
+    const current = state.taskStates[taskId];
+    if (!current) return;
+    state.taskStates[taskId] = withDerivedTime({ ...current, ...patch });
+  };
+
+  const closeSegment = (at: string, stillOpen = false) => {
+    const { segment } = open;
+    if (!segment) return;
+    const task = state.taskStates[segment.taskId];
+    if (task) {
+      updateTask(segment.taskId, {
+        elapsedSec: task.elapsedSec + secondsBetween(segment.since, at),
+      });
+    }
+    record({
+      kind: "focus",
+      taskId: segment.taskId,
+      pauseKind: null,
+      evidence: "observed",
+      from: segment.since,
+      to: at,
+      open: stillOpen,
+    });
+    open.segment = null;
+  };
+
+  const openSegment = (taskId: TaskId, at: string) => {
+    open.segment = { taskId, since: at };
+    updateTask(taskId, {
+      status: "running",
+      startedAt: state.taskStates[taskId]?.startedAt ?? at,
+    });
+    state.activeTaskId = taskId;
+    state.status = "running";
+  };
+
+  const beginPause = (kind: PauseKind, at: string, evidence: Evidence) => {
+    open.pause = { since: at, evidence, kind };
+    state.status = "paused";
+    state.isPaused = true;
+    state.pauseKind = kind;
+    state.pausedSince = at;
+    state.pauseCount += 1;
+  };
+
+  const endPause = (at: string) => {
+    const { pause } = open;
+    if (pause) {
+      const pausedFor = secondsBetween(pause.since, at);
+      state.pausedSec += pausedFor;
+      if (pause.evidence === "inferred") state.inferredPausedSec += pausedFor;
+      record({
+        kind: "pause",
+        taskId: state.activeTaskId,
+        pauseKind: pause.kind,
+        evidence: pause.evidence,
+        from: pause.since,
+        to: at,
+        open: false,
+      });
+    }
+    open.pause = null;
+    state.isPaused = false;
+    state.pauseKind = null;
+    state.pausedSince = null;
+  };
+
+  // the active task stops being active without finishing
+  const releaseActiveTask = () => {
+    const activeId = state.activeTaskId;
+    const active = activeId ? state.taskStates[activeId] : undefined;
+    if (activeId && active && !isFinished(active)) {
+      updateTask(activeId, { status: "pending" });
+    }
+    state.activeTaskId = null;
+  };
+
+  const applySnapshot = (snapshot: BlockPlanned) => {
+    state.name = snapshot.name;
+    // the budget is frozen once execution starts
+    if (state.status === "idle") state.plannedSec = snapshot.plannedDuration;
+
+    const snapshotIds = [...new Set(snapshot.tasks.map((t) => t.taskId))];
+    // tasks with history survive a replan even if the new plan dropped them
+    const kept = state.taskOrder.filter(
+      (id) => !snapshotIds.includes(id) && hasHistory(state.taskStates[id]),
+    );
+
+    const nextStates = {} as Record<TaskId, TaskExecutionState>;
+    for (const id of kept) nextStates[id] = state.taskStates[id];
+    for (const id of snapshotIds) {
+      const planned = snapshot.tasks.find((t) => t.taskId === id)!;
+      const existing = state.taskStates[id];
+      nextStates[id] =
+        existing && hasHistory(existing)
+          ? existing
+          : newTaskState(id, planned.title, planned.plannedDuration);
+    }
+
+    state.taskOrder = [...kept, ...snapshotIds];
+    state.taskStates = nextStates;
+  };
+
+  // dedupe by eventId so a replayed or retried event is counted once
+  const seen = new Set<string>();
+  const orderedEvents = events
+    .filter((e) => e.blockId === block.id)
+    .filter((e) => (seen.has(e.eventId) ? false : (seen.add(e.eventId), true)))
+    .sort((a, b) => a.seq - b.seq);
 
   for (const event of orderedEvents) {
+    // nothing after the end of a block can change its history
+    if (state.status === "completed" || state.status === "terminated") break;
+
+    const at = event.occurredAt;
+    state.eventCount += 1;
+    state.lastEventAt = at;
+
     switch (event.type) {
+      case "BlockPlanned": {
+        applySnapshot(event);
+        break;
+      }
       case "BlockStarted": {
-        state = {
-          ...state,
-          status: "running",
-          sessionId: event.sessionId,
-          startedAt: event.occurredAt,
-        };
+        if (state.status !== "idle") break;
+        state.status = "running";
+        state.sessionId = event.sessionId;
+        state.startedAt = at;
         break;
       }
       case "TaskStarted": {
-        currentStartTime = event.occurredAt;
-        state = {
-          ...state,
-          activeTaskId: event.taskId,
-          status: "running",
-          isPaused: false,
-          taskStates: {
-            ...state.taskStates,
-            [event.taskId]: {
-              ...state.taskStates[event.taskId],
-              status: "running",
-            },
-          },
-        };
+        const task = state.taskStates[event.taskId];
+        if (!task || isFinished(task) || open.segment?.taskId === event.taskId)
+          break;
+        endPause(at);
+        closeSegment(at);
+        if (state.activeTaskId !== event.taskId) releaseActiveTask();
+        state.startedAt ??= at;
+        state.sessionId ??= event.sessionId;
+        openSegment(event.taskId, at);
         break;
       }
       case "TaskPaused": {
-        const task = blockTasks.find((t) => t.id === event.taskId);
-        const currentTaskState = state.taskStates[event.taskId];
-
-        if (!task || !currentTaskState || !currentStartTime) break;
-
-        const deltaSec = deltaSecHelper(event.occurredAt, currentStartTime);
-
-        const nextElapsed = currentTaskState.elapsedSec + deltaSec;
-        const nextRemaining = Math.max(0, task.plannedDuration - nextElapsed);
-        const nextProgress = Math.min(
-          100,
-          (nextElapsed / task.plannedDuration) * 100,
-        );
-
-        state = {
-          ...state,
-          status: "paused",
-          isPaused: true,
-          taskStates: {
-            ...state.taskStates,
-            [event.taskId]: {
-              ...currentTaskState,
-              status: "paused",
-              elapsedSec: nextElapsed,
-              remainingSec: nextRemaining,
-              progress: nextProgress,
-            },
-          },
-        };
-
-        currentStartTime = null;
+        if (
+          state.status !== "running" ||
+          state.activeTaskId !== event.taskId ||
+          !open.segment
+        )
+          break;
+        closeSegment(at);
+        updateTask(event.taskId, { status: "paused" });
+        beginPause("task", at, event.evidence);
         break;
       }
       case "TaskResumed": {
-        const currentTaskState = state.taskStates[event.taskId];
-
-        if (!currentTaskState) break;
-
-        currentStartTime = event.occurredAt;
-
-        state = {
-          ...state,
-          status: "running",
-          isPaused: false,
-          taskStates: {
-            ...state.taskStates,
-            [event.taskId]: {
-              ...currentTaskState,
-              status: "running",
-            },
-          },
-        };
+        if (!state.isPaused || state.activeTaskId !== event.taskId) break;
+        endPause(at);
+        openSegment(event.taskId, at);
         break;
       }
-      case "TaskCompleted": {
-        const currentTaskState = state.taskStates[event.taskId];
-
-        if (!currentTaskState) break;
-
-        let nextElapsed = currentTaskState.elapsedSec;
-
-        if (currentStartTime) {
-          const deltaSec = deltaSecHelper(event.occurredAt, currentStartTime);
-          nextElapsed += deltaSec;
+      case "BlockPaused": {
+        if (state.status !== "running") break;
+        closeSegment(at);
+        if (state.activeTaskId) {
+          updateTask(state.activeTaskId, { status: "paused" });
         }
-
-        state = {
-          ...state,
-          activeTaskId: null,
-          status: "running",
-          isPaused: false,
-          taskStates: {
-            ...state.taskStates,
-            [event.taskId]: {
-              ...currentTaskState,
-              status: "completed",
-              elapsedSec: nextElapsed,
-              remainingSec: 0,
-              progress: 100,
-            },
-          },
-        };
-
-        currentStartTime = null;
+        beginPause("block", at, event.evidence);
+        break;
+      }
+      case "BlockResumed": {
+        if (!state.isPaused) break;
+        endPause(at);
+        if (state.activeTaskId) openSegment(state.activeTaskId, at);
+        else state.status = "running";
+        break;
+      }
+      case "TaskCompleted":
+      case "TaskSkipped": {
+        const task = state.taskStates[event.taskId];
+        if (!task || isFinished(task)) break;
+        if (state.activeTaskId === event.taskId) {
+          if (state.isPaused) {
+            endPause(at);
+            state.status = "running";
+          }
+          closeSegment(at);
+          state.activeTaskId = null;
+        }
+        updateTask(event.taskId, {
+          status: event.type === "TaskCompleted" ? "completed" : "skipped",
+          finishedAt: at,
+        });
         break;
       }
       case "TaskSwitched": {
-        const fromTask = blockTasks.find((t) => t.id === event.fromTaskId);
-        const currentFromTaskState = state.taskStates[event.fromTaskId];
-        const currentToTaskState = state.taskStates[event.toTaskId];
-
-        if (!currentFromTaskState || !fromTask || !currentToTaskState) break;
-        
-        let nextElapsed = currentFromTaskState.elapsedSec;
-        if (currentStartTime) {
-          const deltaSec = deltaSecHelper(event.occurredAt, currentStartTime);
-          nextElapsed = deltaSec + currentFromTaskState.elapsedSec;
-        }
-
-        const nextRemainingSec = Math.max(
-          0,
-          fromTask.plannedDuration - nextElapsed,
-        );
-        const nextProgress = Math.min(
-          100,
-          (nextElapsed / fromTask.plannedDuration) * 100,
-        );
-
-        currentStartTime = event.occurredAt;
-        state = {
-          ...state,
-          activeTaskId: event.toTaskId,
-          status: "running",
-          isPaused: false,
-          taskStates: {
-            ...state.taskStates,
-            [event.fromTaskId]: {
-              ...currentFromTaskState,
-              status: "pending",
-              elapsedSec: nextElapsed,
-              remainingSec: nextRemainingSec,
-              progress: nextProgress,
-            },
-            [event.toTaskId]: {
-              ...currentToTaskState,
-              status: "running",
-            },
-          },
-        };
+        const to = state.taskStates[event.toTaskId];
+        if (
+          state.activeTaskId !== event.fromTaskId ||
+          event.fromTaskId === event.toTaskId ||
+          !to ||
+          isFinished(to)
+        )
+          break;
+        endPause(at);
+        closeSegment(at);
+        releaseActiveTask();
+        openSegment(event.toTaskId, at);
+        state.switchCount += 1;
         break;
       }
       case "BlockCompleted": {
-        state = {
-          ...state,
-          activeTaskId: null,
-          status: "completed",
-          isPaused: false,
-          completedAt: event.occurredAt,
-        };
+        endPause(at);
+        closeSegment(at);
+        releaseActiveTask();
+        state.status = "completed";
+        state.completedAt = at;
         break;
       }
       case "SessionTerminated": {
-        state = {
-          ...state,
-          activeTaskId: null,
-          status: "terminated",
-          isPaused: false,
-          terminatedAt: event.occurredAt,
-        };
+        endPause(at);
+        closeSegment(at);
+        releaseActiveTask();
+        state.status = "terminated";
+        state.terminatedAt = at;
+        state.terminationReason = event.reason;
         break;
       }
       default:
@@ -256,45 +405,33 @@ export function projectBlock(
     }
   }
 
-  if (
-    state.activeTaskId &&
-    currentStartTime &&
-    state.status === "running" &&
-    !state.isPaused
-  ) {
-    const activeTaskId = state.activeTaskId;
-    const task = blockTasks.find((t) => t.id === activeTaskId);
-    const currentTaskState = state.taskStates[activeTaskId];
-
-    if (task && currentTaskState) {
-      const deltaSec = deltaSecHelper(now, currentStartTime);
-      const nextElapsed = deltaSec + currentTaskState.elapsedSec;
-      const nextRemaining = Math.max(0, task.plannedDuration - nextElapsed);
-      const nextProgress = Math.min(
-        100,
-        (nextElapsed / task.plannedDuration) * 100,
-      );
-
-      state = {
-        ...state,
-        taskStates: {
-          ...state.taskStates,
-          [activeTaskId]: {
-            ...currentTaskState,
-            elapsedSec: nextElapsed,
-            remainingSec: nextRemaining,
-            progress: nextProgress,
-          },
-        },
-      };
-    }
+  // live tail: intervals still open at `now`
+  if (open.segment && state.status === "running") closeSegment(now, true);
+  if (open.pause) {
+    const pausedFor = secondsBetween(open.pause.since, now);
+    state.pausedSec += pausedFor;
+    if (open.pause.evidence === "inferred") state.inferredPausedSec += pausedFor;
+    record({
+      kind: "pause",
+      taskId: state.activeTaskId,
+      pauseKind: open.pause.kind,
+      evidence: open.pause.evidence,
+      from: open.pause.since,
+      to: now,
+      open: true,
+    });
   }
+
   return state;
 }
 
+export const orderedTaskStates = (
+  projection: BlockExecutionProjection,
+): TaskExecutionState[] =>
+  projection.taskOrder.map((id) => projection.taskStates[id]).filter(Boolean);
+
 // elapsedSec = sum of running segments
 // A running segment is:
-// TaskStarted opens a segment
-// TaskPaused closes a segment and adds time
-// TaskResumed opens a new segment
-// TaskCompleted closes the final segment and adds time
+// TaskStarted / TaskResumed / BlockResumed / TaskSwitched(to) opens a segment
+// TaskPaused / BlockPaused / TaskCompleted / TaskSkipped / TaskSwitched(from)
+// / BlockCompleted / SessionTerminated close it and add its time

@@ -1,6 +1,20 @@
 import type { BlockId, EventId, SessionId, TaskId, UserId } from "./ids";
 
-export interface BaseEvent {
+// who produced the event
+export type Actor = "human" | "agent";
+// which channel the event came through
+export type EventSource = "timer" | "agent_hook" | "git" | "calendar";
+// observed = the fact was seen directly (a click, a hook firing)
+// inferred = the fact was deduced (e.g. "the agent stopped, so the human is reviewing")
+export type Evidence = "observed" | "inferred";
+
+export interface Provenance {
+  actor: Actor;
+  source: EventSource;
+  evidence: Evidence;
+}
+
+export interface BaseEvent extends Provenance {
   seq: number;
   type: string;
   userId: UserId;
@@ -16,9 +30,10 @@ export interface TaskSnapshot {
   plannedDuration: number; // in seconds
 }
 
-// BlockPlannedEvent
+// BlockPlannedEvent: a frozen copy of the plan, so later plan edits cannot rewrite history
 export interface BlockPlanned extends BaseEvent {
   type: "BlockPlanned";
+  name: string;
   plannedDuration: number; // in seconds
   tasks: TaskSnapshot[];
 }
@@ -29,6 +44,7 @@ export interface BlockStarted extends BaseEvent {
 
 export interface BlockPaused extends BaseEvent {
   type: "BlockPaused";
+  reason?: string; // optional user note
 }
 export interface BlockResumed extends BaseEvent {
   type: "BlockResumed";
@@ -46,42 +62,43 @@ export type BlockEvent =
   | BlockResumed
   | BlockCompleted;
 
-// TaskPlannedEvent
-interface TaskStarted extends BaseEvent {
+export interface TaskStarted extends BaseEvent {
   type: "TaskStarted";
   taskId: TaskId;
 }
 
-interface TaskPaused extends BaseEvent {
+export interface TaskPaused extends BaseEvent {
   type: "TaskPaused";
   taskId: TaskId;
   reason?: string; // optional user note
 }
 
-interface TaskResumed extends BaseEvent {
+export interface TaskResumed extends BaseEvent {
   type: "TaskResumed";
   taskId: TaskId;
 }
 
-interface TaskCompleted extends BaseEvent {
+export interface TaskCompleted extends BaseEvent {
   type: "TaskCompleted";
   taskId: TaskId;
 }
 
-interface TaskSkipped extends BaseEvent {
+export interface TaskSkipped extends BaseEvent {
   type: "TaskSkipped";
   taskId: TaskId;
 }
 
-interface TaskSwitched extends BaseEvent {
+export interface TaskSwitched extends BaseEvent {
   type: "TaskSwitched";
   fromTaskId: TaskId;
   toTaskId: TaskId;
 }
 
-interface SessionTerminated extends BaseEvent {
+export type TerminationReason = "user_exit" | "completed" | "interrupted";
+
+export interface SessionTerminated extends BaseEvent {
   type: "SessionTerminated";
-  reason: "user_exit" | "completed" | "interrupted";
+  reason: TerminationReason;
 }
 
 export type TaskEvent =
@@ -92,15 +109,31 @@ export type TaskEvent =
   | TaskSkipped
   | TaskSwitched;
 
-  export type SessionEvent = SessionTerminated;
-  
-  export type SeiEvent = BlockEvent | TaskEvent | SessionEvent;
-  
+export type SessionEvent = SessionTerminated;
+
+export type SeiEvent = BlockEvent | TaskEvent | SessionEvent;
+
+export type SeiEventType = SeiEvent["type"];
+
+export const SEI_EVENT_TYPES: readonly SeiEventType[] = [
+  "BlockPlanned",
+  "BlockStarted",
+  "BlockPaused",
+  "BlockResumed",
+  "BlockCompleted",
+  "TaskStarted",
+  "TaskPaused",
+  "TaskResumed",
+  "TaskCompleted",
+  "TaskSkipped",
+  "TaskSwitched",
+  "SessionTerminated",
+];
+
 export const DEV_USER_ID = "dev-user" as UserId;
 
-
-// focusTimeSec = sum of running intervals
-// wallClockSec = completedAt - firstStartedAt
-// pauseTimeSec = wallClockSec - focusTimeSec
-// focusVarianceSec = focusTimeSec - plannedDurationSec
-// executionDriftSec = wallClockSec - plannedDurationSec
+export const HUMAN_TIMER: Provenance = {
+  actor: "human",
+  source: "timer",
+  evidence: "observed",
+};
