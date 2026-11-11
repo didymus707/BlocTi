@@ -5,10 +5,12 @@ import { useSeiSession } from "../sei/session/seiSessionContext";
 import { useSeiStore } from "../sei/store/seiStoreContext";
 import { MetricTile } from "../ui/MetricTile";
 import { Chip } from "../ui/StatusChip";
+import { VerdictChip } from "../ui/VerdictChip";
 import { chipKind } from "../sei/view/status";
 import { formatDuration, formatHM, formatPercent, formatShortDate, formatSignedDuration, plural } from "../utils";
 
-const COLS = "grid grid-cols-[minmax(0,3fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-4";
+const COLS =
+  "grid grid-cols-[minmax(0,3fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.7fr)_minmax(0,1fr)_minmax(0,1fr)] gap-4";
 
 export const Reports = () => {
   const { blocks } = useSeiSession();
@@ -29,7 +31,7 @@ export const Reports = () => {
             <MetricTile
               label="Avg fidelity"
               value={totals.averageFidelity === null ? "—" : formatPercent(totals.averageFidelity)}
-              hint={plural(finished.length, "block")}
+              hint={`${totals.verdicts.followed} of ${plural(finished.length, "block")} followed the plan`}
             />
             <MetricTile
               label="Total drift"
@@ -40,11 +42,12 @@ export const Reports = () => {
             <MetricTile label="Focus" value={formatDuration(totals.focusSec)} hint={`of ${formatDuration(totals.plannedFocusSec)} planned`} />
           </section>
           <div className="overflow-x-auto rounded-tile border border-line bg-surface">
-            <div className="min-w-[640px]">
+            <div className="min-w-[780px]">
               <div className={`${COLS} label-caps border-b border-line px-5 py-3`}>
                 <span>Block</span>
                 <span>Status</span>
                 <span>Fidelity</span>
+                <span>Verdict</span>
                 <span>Drift</span>
                 <span>Focus</span>
               </div>
@@ -69,6 +72,7 @@ export const Reports = () => {
                       <Chip kind={chipKind(projection)} />
                     </span>
                     <span className="font-mono">{metrics.fidelity ? formatPercent(metrics.fidelity.score) : "—"}</span>
+                    <span>{metrics.fidelity ? <VerdictChip verdict={metrics.fidelity.verdict} /> : "—"}</span>
                     <span className={`font-mono ${drift > 60 ? "text-over" : ""}`}>{formatSignedDuration(drift)}</span>
                     <span className="font-mono">{formatDuration(metrics.focusSec)}</span>
                   </Link>

@@ -170,6 +170,14 @@ describe("BlocTi app on SEI", () => {
     expect(edit.getByLabelText(/Tasks must be finished in this order/)).toBeDisabled();
     expect(edit.getByLabelText("Task 1 importance")).toHaveValue("critical");
     fireEvent.click(edit.getByRole("button", { name: "Cancel" }));
+
+    // the report list carries the verdict next to the score
+    // the sidebar and the phone tab bar both link to Reports
+    fireEvent.click(screen.getAllByRole("link", { name: "Reports" })[0]);
+    const row = within(await screen.findByRole("link", { name: /Release/ }));
+    expect(row.getByText("24%")).toBeInTheDocument();
+    expect(row.getByText("Not followed")).toBeInTheDocument();
+    expect(metric("Avg fidelity").getByText("0 of 1 block followed the plan")).toBeInTheDocument();
   });
 
   it("keeps a trace across a page refresh", async () => {

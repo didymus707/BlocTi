@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import type { BlockView } from "../../sei/session/seiSessionContext";
+import { VERDICT_LABEL } from "../../sei/view/explain";
 import { buildTrace } from "../../sei/view/trace";
 import { StatusChip } from "../../ui/StatusChip";
 import { TraceStrip } from "../../ui/TraceStrip";
@@ -41,6 +42,7 @@ export const BlockCard = ({ view, now }: { view: BlockView; now: string }) => {
             <span>
               Fidelity{" "}
               <strong className="font-mono text-ink">{formatPercent(metrics.fidelity.score)}</strong>
+              <span className="text-muted"> · {VERDICT_LABEL[metrics.fidelity.verdict].toLowerCase()}</span>
             </span>
             <span>
               Drift{" "}
