@@ -18,11 +18,8 @@ import {
 import { buildTrace } from "../trace";
 import {
   POINTS_KEY,
-  completionNote,
   describeDeviation,
   driftInsight,
-  orderNote,
-  timeAccuracyNote,
   formatPoints,
   pointsSummary,
   procedureSummary,
@@ -166,31 +163,6 @@ describe("conformance in words", () => {
 });
 
 describe("explanations", () => {
-  // T1 done 60s over, T2 skipped, T3 done on time; one switch
-  const events = sequence(
-    ...started(0),
-    ev.taskSwitched(T1, T3, 300),
-    ev.taskCompleted(T3, 1200),
-    ev.taskStarted(T1, 1200),
-    ev.taskCompleted(T1, 1560),
-    ev.taskSkipped(T2, 1560),
-    ev.blockCompleted(1560),
-  );
-  const p = project(events, 2000);
-
-  it("reads completion in planned time", () => {
-    expect(completionNote(p)).toBe("25m of 30m planned work done.");
-  });
-
-  it("reports the worst estimate miss", () => {
-    expect(timeAccuracyNote(p)).toBe("Completed tasks landed within 1m of their estimates.");
-  });
-
-  it("counts switches", () => {
-    expect(orderNote(p)).toBe("1 switch across 2 started tasks.");
-    expect(orderNote(project(sequence(...started(0)), 10))).toBe("Worked in the planned order.");
-  });
-
   it("explains where the overrun came from", () => {
     const pauses = sequence(
       ...started(0),

@@ -105,8 +105,11 @@ describe("BlocTi app on SEI", () => {
     click("Complete task");
     await waitFor(() => expect(status()).toBe("Completed"));
 
-    // Read: 5m of 10m (accuracy 0.5), Write: 20m of 20m; wall 26m vs 30m budget
-    expect(screen.getByTestId("fidelity-score")).toHaveTextContent("95%");
+    // Read took 5m of 10m: one minor deviation, 1 of 8 points; wall 26m vs 30m budget
+    expect(screen.getByTestId("fidelity-score")).toHaveTextContent("88%");
+    expect(screen.getByTestId("fidelity-verdict")).toHaveTextContent("Minor deviations");
+    const deviations = within(screen.getByRole("list", { name: "Deviations" }));
+    expect(deviations.getByText("Read took 5m, 50% under its 10m estimate.")).toBeInTheDocument();
     expect(metric("Execution drift").getByText("−4m")).toBeInTheDocument();
     expect(metric("Focus variance").getByText("−5m")).toBeInTheDocument();
     expect(metric("Paused").getByText("1m")).toBeInTheDocument();

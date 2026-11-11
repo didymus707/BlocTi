@@ -111,9 +111,8 @@ describe("translate (hook -> SEI events)", () => {
     expect(metrics.pauseSec).toBe(180);
     expect(metrics.inferredPauseSec).toBe(180);
     expect(metrics.unaccountedSec).toBe(0);
-    // inferred plan: completion is by count, time accuracy is not measurable
-    expect(metrics.fidelity?.completion).toBeCloseTo(2 / 3, 5);
-    expect(metrics.fidelity?.timeAccuracy).toBe(1);
+    // inferred plan: no procedure to check against, so the honest number is turn completion
+    expect(metrics.completionRate).toBeCloseTo(2 / 3, 5);
   });
 
   it("treats a session ending mid-turn as a skipped task", () => {

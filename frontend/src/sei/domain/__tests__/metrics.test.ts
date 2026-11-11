@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { TaskSnapshot } from "../events";
-import type { TaskId } from "../ids";
-import { computeMetrics, fidelity, portfolioMetrics } from "../metrics";
+import { conformanceOf } from "../conformance";
+import { computeMetrics, portfolioMetrics } from "../metrics";
 import { projectBlock } from "../projection";
 import {
   PLAN,
@@ -59,12 +58,11 @@ describe("computeMetrics", () => {
     expect(m.focusVarianceSec).toBe(0);
     expect(m.unaccountedSec).toBe(0);
     expect(m.completionRate).toBe(1);
-    expect(m.fidelity).toEqual({
+    expect(m.fidelity).toMatchObject({
+      isFinal: true,
       score: 1,
-      completion: 1,
-      timeAccuracy: 1,
-      sequence: 1,
-      adherence: 1,
+      verdict: "followed",
+      deviations: [],
     });
   });
 
@@ -141,117 +139,44 @@ describe("computeMetrics", () => {
   });
 });
 
+// the checker has its own tests; these cover how metrics carry its report
 describe("fidelity", () => {
-  const A = "A" as TaskId;
-  const B = "B" as TaskId;
-  const C = "C" as TaskId;
-  const abc: TaskSnapshot[] = [
-    { taskId: A, title: "A", plannedDuration: 1800 },
-    { taskId: B, title: "B", plannedDuration: 600 },
-    { taskId: C, title: "C", plannedDuration: 1200 },
-  ];
-  const projectAbc = (events: SeiEvent[], nowSec: number) =>
-    projectBlock(PLAN, [], events, at(nowSec));
+  // T1 done on time, T2 skipped, T3 never done
+  const skippedOne = () =>
+    sequence(...started(0), ev.taskCompleted(T1, 600), ev.taskSkipped(T2, 660));
 
-  it("matches the worked example: A 30m, B 10m skipped, C 20m", () => {
-    const events = sequence(
-      ev.planned(0, abc, { plannedDuration: 3600 }),
-      ev.blockStarted(0),
-      ev.taskStarted(A, 0),
-      ev.taskSkipped(B, 10),
-      ev.taskSwitched(A, C, 900),
-      ev.taskCompleted(C, 2700),
-      ev.taskStarted(A, 2700),
-      ev.taskCompleted(A, 3600),
-      ev.blockCompleted(3600),
+  it("is the conformance report of the projection", () => {
+    const projection = projectBlock(PLAN, PLAN_TASKS, finishedInPlan(), at(1800));
+    expect(computeMetrics(projection, at(1800)).fidelity).toEqual(
+      conformanceOf(projection),
     );
-    const f = fidelity(projectAbc(events, 3600));
-    expect(f.completion).toBeCloseTo(0.8333, 4);
-    expect(f.timeAccuracy).toBeCloseTo(0.8, 4);
-    expect(f.sequence).toBeCloseTo(0.5, 4);
-    expect(f.adherence).toBeCloseTo(0.68, 4);
-    expect(f.score).toBeCloseTo(0.7, 4);
-    // the plain completion rate would have said 2/3
-    const m = computeMetrics(projectAbc(events, 3600), at(3600));
-    expect(m.completionRate).toBeCloseTo(2 / 3, 4);
-    expect(m.focusVarianceSec).toBe(600);
   });
 
-  it("weights completion by planned time, not task count", () => {
-    const skipBig = sequence(
-      ev.planned(0, abc),
-      ev.blockStarted(0),
-      ev.taskStarted(A, 0),
-      ev.taskSkipped(A, 0),
-      ev.taskStarted(B, 0),
-      ev.taskCompleted(B, 600),
-      ev.taskStarted(C, 600),
-      ev.taskCompleted(C, 1800),
-    );
-    const skipSmall = sequence(
-      ev.planned(0, abc),
-      ev.blockStarted(0),
-      ev.taskStarted(A, 0),
-      ev.taskCompleted(A, 1800),
-      ev.taskStarted(B, 1800),
-      ev.taskSkipped(B, 1800),
-      ev.taskStarted(C, 1800),
-      ev.taskCompleted(C, 3000),
-    );
-    expect(fidelity(projectAbc(skipBig, 3000)).completion).toBeCloseTo(1800 / 3600, 4);
-    expect(fidelity(projectAbc(skipSmall, 3000)).completion).toBeCloseTo(3000 / 3600, 4);
+  it("names the deviation behind a lost point", () => {
+    const m = metricsAt(sequence(...skippedOne(), ev.terminated(700)), 700);
+    // three required major steps with estimates: 4 points each
+    expect(m.fidelity).toMatchObject({
+      isFinal: true,
+      verdict: "major_deviations",
+      pointsTotal: 12,
+      pointsLost: 8,
+    });
+    expect(m.fidelity?.score).toBeCloseTo(4 / 12, 4);
+    expect(m.fidelity?.deviations.map((d) => [d.kind, d.taskId])).toEqual([
+      ["missed_step", T2],
+      ["missed_step", T3],
+    ]);
   });
 
-  it("penalises overrun and underrun symmetrically", () => {
-    const one: TaskSnapshot[] = [{ taskId: A, title: "A", plannedDuration: 1000 }];
-    const finishAt = (sec: number) =>
-      fidelity(
-        projectAbc(
-          sequence(
-            ev.planned(0, one),
-            ev.blockStarted(0),
-            ev.taskStarted(A, 0),
-            ev.taskCompleted(A, sec),
-          ),
-          sec,
-        ),
-      ).timeAccuracy;
-    expect(finishAt(1000)).toBe(1);
-    expect(finishAt(1500)).toBeCloseTo(0.5, 4);
-    expect(finishAt(500)).toBeCloseTo(0.5, 4);
-    expect(finishAt(2500)).toBe(0);
+  it("is provisional while the block runs: open steps are not judged yet", () => {
+    const m = metricsAt(skippedOne(), 700);
+    expect(m.fidelity).toMatchObject({ isFinal: false, pointsLost: 4 });
+    expect(m.fidelity?.deviations.map((d) => d.taskId)).toEqual([T2]);
   });
 
-  it("does not count auto-advance as an order deviation", () => {
-    expect(fidelity(projectBlock(PLAN, PLAN_TASKS, finishedInPlan(), at(1800))).sequence).toBe(1);
-  });
-
-  it("scores zero when nothing was completed, however tidy the trace", () => {
-    const f = fidelity(projectBlock(PLAN, PLAN_TASKS, sequence(...started(0), ev.terminated(100)), at(100)));
-    expect(f.score).toBe(0);
-    expect(f.sequence).toBe(1);
-  });
-
-  it("falls back to counts and skips time accuracy for inferred zero-duration plans", () => {
-    const inferred: TaskSnapshot[] = [
-      { taskId: A, title: "prompt 1", plannedDuration: 0 },
-      { taskId: B, title: "prompt 2", plannedDuration: 0 },
-    ];
-    const f = fidelity(
-      projectAbc(
-        sequence(
-          ev.planned(0, inferred, { plannedDuration: 0 }),
-          ev.blockStarted(0),
-          ev.taskStarted(A, 0),
-          ev.taskCompleted(A, 300),
-          ev.taskStarted(B, 300),
-        ),
-        400,
-      ),
-    );
-    expect(f.completion).toBe(0.5);
-    expect(f.timeAccuracy).toBe(1);
-    expect(f.score).toBeCloseTo(0.5, 4);
+  it("stays apart from the completion rate, which only counts tasks", () => {
+    const m = metricsAt(sequence(...skippedOne(), ev.terminated(700)), 700);
+    expect(m.completionRate).toBeCloseTo(1 / 3, 4);
   });
 });
 
@@ -268,9 +193,24 @@ describe("portfolioMetrics", () => {
       liveBlocks: 1,
       focusSec: 1900,
       averageFidelity: 1,
+      verdicts: { followed: 1, minor_deviations: 0, major_deviations: 0, not_followed: 0 },
       executionDriftSec: 0,
       completedTasks: 3,
       totalTasks: 9,
+    });
+  });
+
+  it("counts finished blocks by verdict and averages their scores", () => {
+    const followed = metricsAt(finishedInPlan(), 2000);
+    // nothing done: every point lost
+    const abandoned = metricsAt(sequence(...started(0), ev.terminated(100)), 100);
+    const p = portfolioMetrics([followed, abandoned]);
+    expect(p.averageFidelity).toBeCloseTo(0.5, 4);
+    expect(p.verdicts).toEqual({
+      followed: 1,
+      minor_deviations: 0,
+      major_deviations: 1,
+      not_followed: 0,
     });
   });
 

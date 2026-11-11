@@ -1,18 +1,28 @@
+import { procedureOf, type Deviation } from "../../sei/domain/conformance";
 import type { SeiEvent } from "../../sei/domain/events";
 import { orderedTaskStates, type BlockExecutionProjection } from "../../sei/domain/projection";
 import type { BlockView } from "../../sei/session/seiSessionContext";
-import { completionNote, driftInsight, orderNote, timeAccuracyNote } from "../../sei/view/explain";
+import {
+  DEVIATION_LABEL,
+  POINTS_KEY,
+  SEVERITY_LABEL,
+  VERDICT_NOTE,
+  describeDeviation,
+  driftInsight,
+  formatPoints,
+  pointsSummary,
+  procedureSummary,
+} from "../../sei/view/explain";
 import { buildTrace } from "../../sei/view/trace";
+import { CheckIcon } from "../../ui/icons";
 import { MetricTile } from "../../ui/MetricTile";
 import { TraceLegend, TraceStrip } from "../../ui/TraceStrip";
-import { formatDuration, formatPercent, formatSignedDuration, formatTime } from "../../utils";
+import { VerdictChip } from "../../ui/VerdictChip";
+import { formatDuration, formatHM, formatPercent, formatSignedDuration, formatTime, plural } from "../../utils";
 import { Panel } from "../layout/Page";
 
-const Bar = ({ value }: { value: number }) => (
-  <div className="h-1.5 rounded-full bg-track">
-    <div className="h-full rounded-full bg-ink" style={{ width: `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%` }} />
-  </div>
-);
+// minor deviations stay ink; anything worse takes the warning colour
+const costTone = (deviation: Deviation) => (deviation.severity === "minor" ? "text-ink-2" : "text-over");
 
 export const TraceCard = ({ view, now, agent = false }: { view: BlockView; now: string; agent?: boolean }) => {
   const trace = buildTrace(view.projection, now, { includePlan: !agent });
@@ -74,21 +84,24 @@ export const LiveMetrics = ({ view }: { view: BlockView }) => {
             <span className="label-caps">Fidelity so far</span>
             <span className="font-mono text-xl font-medium">{formatPercent(f.score)}</span>
           </div>
-          {[
-            ["Completion", f.completion],
-            ["Time accuracy", f.timeAccuracy],
-            ["Order", f.sequence],
-          ].map(([label, value]) => (
-            <div key={label as string} className="flex items-center gap-2.5 text-xs text-ink-2">
-              <span className="w-24 shrink-0">{label}</span>
-              <div className="flex-1">
-                <Bar value={value as number} />
-              </div>
-              <span className="w-10 text-right font-mono">{formatPercent(value as number)}</span>
-            </div>
-          ))}
+          {f.deviations.length === 0 ? (
+            <p className="m-0 flex items-center gap-1.5 text-[13px] font-medium text-ink-2">
+              <CheckIcon size={14} strokeWidth={2.6} />
+              No deviations so far
+            </p>
+          ) : (
+            <ul aria-label="Deviations so far" className="m-0 flex list-none flex-col gap-2 p-0">
+              {f.deviations.map((d) => (
+                <li key={`${d.kind}-${d.taskId}`} className="flex items-start justify-between gap-3 text-xs leading-snug text-ink-2">
+                  <span>{describeDeviation(d)}</span>
+                  <span className={`shrink-0 font-mono font-semibold ${costTone(d)}`}>−{formatPoints(d.cost)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           <p className="m-0 text-xs leading-relaxed text-muted">
-            Final when the block ends. Completion is weighted by planned time.
+            {formatPoints(f.pointsLost)} of {formatPoints(f.pointsTotal)} points lost. Steps still open are judged when the block
+            ends.
           </p>
         </div>
       )}
@@ -126,45 +139,57 @@ export const PlanSummary = ({ view }: { view: BlockView }) => {
 export const FidelityCard = ({ view }: { view: BlockView }) => {
   const f = view.metrics.fidelity;
   if (!f) return null;
-  const { projection } = view;
   return (
     <section aria-label="Fidelity" className="flex flex-col gap-5 rounded-section border border-line bg-surface p-6 sm:p-7">
-      <div className="flex flex-wrap items-end gap-7">
+      <div className="flex flex-wrap items-end gap-x-7 gap-y-4">
         <div className="flex flex-col gap-1.5">
           <h2 className="label-caps m-0">Fidelity</h2>
           <span data-testid="fidelity-score" className="font-mono text-6xl font-medium leading-none tracking-[-0.04em] sm:text-7xl">
             {formatPercent(f.score)}
           </span>
         </div>
-        <p className="m-0 flex-[1_1_240px] text-sm leading-relaxed text-ink-2">
-          How closely execution followed the plan. Completion sets the ceiling; straying from planned time and order can take
-          up to half of it away.
+        <div className="flex flex-[1_1_240px] flex-col items-start gap-2">
+          <VerdictChip verdict={f.verdict} testId="fidelity-verdict" />
+          <p className="m-0 text-sm leading-relaxed text-ink-2">
+            {VERDICT_NOTE[f.verdict]} {pointsSummary(f)}
+          </p>
+        </div>
+      </div>
+      {f.deviations.length === 0 ? (
+        <p className="m-0 flex items-center gap-2 rounded-[10px] bg-paper px-4 py-3.5 text-sm font-medium">
+          <CheckIcon size={16} strokeWidth={2.6} />
+          No deviations: the run matched the plan.
         </p>
-      </div>
-      <div className="flex flex-wrap items-center gap-2.5 rounded-[10px] bg-paper px-4 py-3.5 font-mono text-[13px] text-ink-2">
-        <span className="font-semibold text-ink">{formatPercent(f.completion)}</span>
-        <span>completion</span>
-        <span>×</span>
-        <span>(50% + 50% ×</span>
-        <span className="font-semibold text-ink">{formatPercent(f.adherence)}</span>
-        <span>adherence)</span>
-      </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {[
-          ["Completion", f.completion, completionNote(projection)],
-          ["Time accuracy", f.timeAccuracy, timeAccuracyNote(projection)],
-          ["Order", f.sequence, orderNote(projection)],
-        ].map(([label, value, note]) => (
-          <div key={label as string} className="flex flex-col gap-2">
-            <div className="flex justify-between text-[13px]">
-              <span className="font-semibold">{label}</span>
-              <span className="font-mono">{formatPercent(value as number)}</span>
-            </div>
-            <Bar value={value as number} />
-            <span className="text-xs leading-snug text-muted">{note}</span>
-          </div>
-        ))}
-      </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <h3 className="m-0 text-[13px] font-semibold">{plural(f.deviations.length, "deviation")}, worst first</h3>
+          <ul aria-label="Deviations" className="m-0 list-none rounded-[10px] border border-line p-0">
+            {f.deviations.map((d) => (
+              <li
+                key={`${d.kind}-${d.taskId}`}
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 gap-y-1 border-b border-divider px-4 py-3 last:border-b-0"
+              >
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="label-caps">
+                    {DEVIATION_LABEL[d.kind]} · {SEVERITY_LABEL[d.severity]}
+                  </span>
+                  <span className="text-sm leading-snug">{describeDeviation(d)}</span>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <span className={`font-mono text-sm font-semibold ${costTone(d)}`}>
+                    −{formatPoints(d.cost)} {d.cost === 1 ? "pt" : "pts"}
+                  </span>
+                  {d.at && <span className="font-mono text-[11px] text-faint">{formatHM(d.at)}</span>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p className="m-0 text-xs leading-relaxed text-muted">
+        Checked against the plan as it stood at the start: {procedureSummary(procedureOf(view.projection))}. Points per broken
+        rule: {POINTS_KEY}. A missed step loses every point it carried.
+      </p>
     </section>
   );
 };
