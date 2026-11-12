@@ -3,10 +3,23 @@
 Execution infrastructure for human + AI work (SEI). Plans say what you intend to do, events record what actually happened, and projections and metrics derive the truth from the events.
 
 ```
-frontend/    React app + the SEI domain (frontend/src/sei/domain): events, projection, resolver, metrics
+frontend/    React app + the SEI domain (frontend/src/sei/domain): events, projection, resolver, conformance, metrics
 backend/     Express + Prisma/Postgres event store: POST /events, GET /events, /blocks
 integrations/claude-code/   hook adapter that records Claude Code sessions as blocks
 ```
+
+## What it measures
+
+A plan is read as a procedure: a list of rules a run can be checked against.
+
+- each task must be completed, unless it is marked optional
+- each task has an importance: minor, required (the default) or critical
+- the plan can require its tasks to be finished in order
+- a finished task should land near its estimate (within 15% by default)
+
+Fidelity is the result of that check. Every broken rule is listed as a deviation with the task, the time and the points it cost, so a score can always be traced back to what happened. The verdict comes from the worst deviation, not the score: skipping a critical task means the plan was not followed, even at 85%.
+
+Claude Code sessions have no plan written ahead of the run, so they show turn completion instead and are never averaged with timed blocks.
 
 ## Run it
 
