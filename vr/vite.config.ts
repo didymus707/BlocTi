@@ -6,11 +6,18 @@
  */
 
 import { iwsdkDev } from '@iwsdk/vite-plugin-dev';
-import { defineConfig } from 'vite';
+import { defineConfig, searchForWorkspaceRoot } from 'vite';
 
 export default defineConfig({
   plugins: [iwsdkDev()],
-  server: { host: '0.0.0.0', port: 8081, open: false },
+  server: {
+    host: '0.0.0.0',
+    port: 8081,
+    open: false,
+    // the BlocTi engine is imported from ../frontend/src, outside this
+    // project, so the dev server has to be allowed to serve it
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), '../frontend/src'] },
+  },
   build: {
     outDir: 'dist',
     sourcemap: process.env.NODE_ENV !== 'production',
