@@ -12,7 +12,7 @@ export default defineConfig({
   plugins: [iwsdkDev()],
   server: {
     host: '0.0.0.0',
-    port: 8081,
+    port: 8092,
     open: false,
     // the BlocTi engine is imported from ../frontend/src, outside this
     // project, so the dev server has to be allowed to serve it
