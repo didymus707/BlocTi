@@ -1,5 +1,4 @@
 import {
-  PokeInteractable,
   RayInteractable,
   type Entity,
   type Object3D,
@@ -20,17 +19,17 @@ export const placeAt = (object: Object3D, slot: Slot): void => {
 };
 
 // A hidden panel must also stop catching pinches: pointer rays hit objects
-// whether or not they are visible, so the interaction components go too.
+// whether or not they are visible, so the interaction component goes too.
+//
+// Panels answer to a pinch along the hand's ray only, not to a fingertip
+// poke. Poke was unreliable in the emulator, and the panels sit where hands
+// rest near the desk, so a stray touch could end a block.
 export const setShown = (entity: Entity, shown: boolean): void => {
   const object = entity.object3D;
   if (object) object.visible = shown;
-  if (shown) {
-    if (!entity.hasComponent(RayInteractable)) entity.addComponent(RayInteractable);
-    if (!entity.hasComponent(PokeInteractable)) entity.addComponent(PokeInteractable);
-  } else {
-    if (entity.hasComponent(RayInteractable)) entity.removeComponent(RayInteractable);
-    if (entity.hasComponent(PokeInteractable)) entity.removeComponent(PokeInteractable);
-  }
+  const has = entity.hasComponent(RayInteractable);
+  if (shown && !has) entity.addComponent(RayInteractable);
+  if (!shown && has) entity.removeComponent(RayInteractable);
 };
 
 type Props = Record<string, unknown>;
