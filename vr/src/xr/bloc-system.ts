@@ -94,11 +94,22 @@ export class BlocSystem extends createSystem({
   private entities = new Map<string, Entity>(); // "menu", "focus", "report", "card-3"
   private handles = new Map<string, PanelHandle>();
   private nextTickAt = 0;
+  private canEnterAR = false; // this browser can start a mixed-reality session
 
   init(): void {
     this.store = browserStore();
     this.run = loadRun(this.store);
     this.history = loadHistory(this.store);
+
+    // a desktop browser opening the link has no headset; say so instead of
+    // offering a button that cannot work
+    navigator.xr
+      ?.isSessionSupported('immersive-ar')
+      .then((supported) => {
+        this.canEnterAR = supported;
+        this.render();
+      })
+      .catch(() => {});
 
     this.cleanupFuncs.push(
       this.queries.layouts.subscribe('qualify', (entity) => this.build(entity)),
@@ -258,12 +269,15 @@ export class BlocSystem extends createSystem({
     }
     panel.text('trend', trendLine(this.history));
     const inBrowser = this.world.visibilityState.peek() === VisibilityState.NonImmersive;
-    panel.set('enter-xr', { display: inBrowser && this.world.xrEnabled ? 'flex' : 'none' });
+    const offerAR = inBrowser && this.world.xrEnabled && this.canEnterAR;
+    panel.set('enter-xr', { display: offerAR ? 'flex' : 'none' });
     panel.text(
       'hint',
-      inBrowser
-        ? 'On a headset, enter mixed reality. Here, click the panels.'
-        : 'Pinch the block and move it onto your desk.',
+      !inBrowser
+        ? 'Pinch the block and move it onto your desk.'
+        : offerAR
+          ? 'Enter mixed reality, or click the panels here.'
+          : 'Open this page on a Quest for mixed reality. Here, click the panels.',
     );
   }
 
