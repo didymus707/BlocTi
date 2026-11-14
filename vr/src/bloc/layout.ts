@@ -20,8 +20,8 @@ export const MAX_CARDS = 6;
 const COLUMNS = 3;
 const COLUMN_GAP = 0.15; // card centres, metres
 const ROWS = [
-  { y: 0.17, z: -0.02 },
-  { y: 0.28, z: -0.06 },
+  { y: 0.25, z: -0.03 },
+  { y: 0.35, z: -0.08 },
 ];
 
 // turn a point so a panel there faces the viewer
@@ -36,8 +36,9 @@ const facing = (point: Vec3): Slot => {
   };
 };
 
-export const FOCUS_SLOT: Slot = facing({ x: 0, y: 0.08, z: 0.04 });
-export const BOARD_SLOT: Slot = facing({ x: 0, y: 0.23, z: -0.04 }); // menu and report
+// the timer's bottom edge clears the block, so the block stays in sight
+export const FOCUS_SLOT: Slot = facing({ x: 0, y: 0.12, z: 0.05 });
+export const BOARD_SLOT: Slot = facing({ x: 0, y: 0.28, z: -0.05 }); // menu and report
 
 // cards fill rows of three, front row first; a short last row is centred
 export const cardSlots = (count: number): Slot[] => {
