@@ -6,6 +6,7 @@ Execution infrastructure for human + AI work (SEI). Plans say what you intend to
 frontend/    React app + the SEI domain (frontend/src/sei/domain): events, projection, resolver, conformance, metrics
 backend/     Express + Prisma/Postgres event store: POST /events, GET /events, /blocks
 integrations/claude-code/   hook adapter that records Claude Code sessions as blocks
+vr/          mixed-reality version for a headset (Immersive Web SDK), same engine; see vr/README.md
 ```
 
 ## What it measures

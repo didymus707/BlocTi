@@ -1,45 +1,68 @@
-# IWSDK App
+# BlocTi in mixed reality
 
-This project uses `iwsdk.config.json` for declarative scene, asset, component,
-XR, and emulator configuration. Application systems remain explicit in
-`src/index.ts`.
+A small, hands-first version of BlocTi for a headset. You sit at your desk, put
+the block on it, pick a plan, and work through its steps as cards within arm's
+reach. When the block ends, the conformance report appears above the desk: the
+score, the verdict and every deviation, in the same words as the web app. The
+verdicts of your last sessions are kept, so you can see whether you follow your
+own plans.
 
-```sh
+It runs the BlocTi engine from `frontend/src/sei` unchanged. Only the spatial
+layer is new.
+
+## Use it
+
+1. Open the page on a Quest and enter mixed reality.
+2. The block appears in front of you. Pinch it and drag it onto your desk; it
+   drops onto the surface and turns to face you. Next session it is back on
+   the same spot.
+3. Pinch a plan: a 10-minute reset, 25 minutes of deep work, or a release
+   checklist (order enforced, one critical step).
+4. On each card, pinch Start, Done or Skip. The timer above the block shows the
+   step in focus. Pause and End block are on the timer.
+5. When the last step is done (or you end the block), read the report.
+
+Everything is pinch along the hand's ray; controllers work too. Nothing needs
+typing, standing or walking. Without a headset the page still shows the panels
+and you can click them.
+
+## Run it
+
+```bash
+cd vr
 npm install
-npm run dev
+npm run dev        # dev server + emulated Quest 3 at https://localhost:8092
+npm test           # the pure glue in src/bloc
+npm run typecheck
+npm run build      # static site in dist/
 ```
 
-Use the Runtime and Editor controls in the managed browser to switch between
-the running experience and its authored scene.
+The dev server uses a self-signed certificate (WebXR needs https). To try it on
+a headset on the same network, open the `Network` URL it prints and accept the
+certificate warning.
 
-## Starter content
+## Layout
 
-The robot and welcome panel are small examples of authored scene content plus
-runtime systems. The robot turns toward the player's head and plays a sound
-when pressed. To remove the robot, delete its scene node, its `RobotSystem`
-registration from `src/index.ts` or `src/index.js`, and its `Robot` registration
-from `src/components.ts` or `src/components.js`; you can then delete the unused
-robot component and system files. To remove the welcome panel, delete its scene
-node and its `PanelSystem` registration from the application entry point.
+```
+src/bloc/    pure TypeScript, tested with Vitest; no 3D code
+  engine.ts      the one import of the BlocTi engine from ../frontend
+  templates.ts   the three plans
+  controls.ts    what a pinch means: control -> engine commands
+  run.ts         plan + events, applied, projected, saved to localStorage
+  view.ts        what each panel says
+  history.ts     one line per finished block, and the trend
+  placement.ts   spawn, drop onto a surface, saved pose
+  layout.ts      where each panel sits around the block
+src/xr/      the spatial layer (Immersive Web SDK systems)
+  placement-system.ts   the block, the anchor, dropping onto the desk
+  bloc-system.ts        panels <-> engine
+public/ui/   the four panels, as UIKitML
+```
 
-The robot stands on the second of three numbered stations. The first holds dark
-pieces you can grab and move, and the third holds a ring you can spin in place.
-The studio props (the plinths and the dark pieces, plus the floor and stage in VR
-and Desktop 3D) are built in code in `src/scene-assets/studio.scene-asset.ts` or
-`.js`. The VR and Desktop 3D background furniture is built the same way in
-`src/scene-assets/decor.scene-asset.ts` or `.js`, so the starter downloads no
-extra models. To remove any of them, delete their scene nodes and their entries
-in `src/assets.ts` or `src/assets.js`, then delete the files you no longer use.
-The station labels are `public/ui/label-*.uikitml`.
+Data stays in the browser (localStorage). There is no backend.
 
-The rest of the look is built-in components in the scene, which you can edit in
-the editor without code. The soft light on every object is the scene root's
-`IBLGradient` (select the Level Root to edit it), and the soft shadows under
-each object are `ContactShadow` nodes. In VR and Desktop 3D, the sky is the
-scene root's `DomeGradient` (its colors, tilt and dither are also on the Level
-Root), and the floor fades into it through the `DomeFade` on the floor node. AR
-projects have no sky or floor, so passthrough stays visible, and a
-`ShadowCatcher` node grounds the stations.
+## Deploy
 
-- Minimal scene walkthrough: https://iwsdk.dev/guides/01b-minimal-scene.html
-- XR-enabled projects — IWER emulator controls: https://iwsdk.dev/guides/02-testing-experience.html#iwer-controls
+`.github/workflows/vr-pages.yml` builds and publishes `vr/dist` to GitHub Pages
+on pushes to `development`. Turn Pages on first: Settings, Pages, Source:
+GitHub Actions.
