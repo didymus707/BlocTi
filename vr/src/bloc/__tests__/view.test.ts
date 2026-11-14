@@ -188,6 +188,21 @@ describe('report', () => {
     );
   });
 
+  it('finishing ahead, then skipping the critical step, reads as not followed', () => {
+    const { pinch, view, task } = setup('release');
+    pinch(card('start', task(0)));
+    pinch(card('done', task(1)), 180);
+    pinch(card('skip', task(0)), 20);
+    pinch({ kind: 'timer', control: 'end' }, 10);
+    const report = reportView(view())!;
+    expect(report.verdictLabel).toBe('Not followed');
+    expect(report.deviations[0]).toBe('Run the full test suite was skipped.');
+    expect(report.deviations).toContain(
+      'Update the changelog was finished while Run the full test suite was still open.',
+    );
+    expect(report.deviations[MAX_REPORT_LINES - 1]).toMatch(/^And \d+ more\.$/);
+  });
+
   it('keeps the list short enough to read at a glance', () => {
     const { pinch, view, task } = setup('release');
     pinch(card('start', task(0)));
