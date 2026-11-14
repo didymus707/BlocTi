@@ -1,0 +1,106 @@
+<!--
+  The conformance report, shown when a block ends: score, verdict, the
+  deviations worst first, and what the run was checked against. The words
+  come from frontend/src/sei/view/explain.ts through reportView().
+  Every text element starts with some text: an empty div gets no text child,
+  and then setting its text later shows nothing.
+-->
+<style>
+  .board {
+    flex-direction: column;
+    width: 440;
+    padding-top: 18;
+    padding-right: 18;
+    padding-bottom: 18;
+    padding-left: 18;
+    gap: 8;
+  }
+
+  .eyebrow {
+    color: #6b5a00;
+    font-size: 15;
+    font-weight: 700;
+    letter-spacing: 1.2;
+  }
+
+  .eyebrow:dark {
+    color: #f5d90a;
+  }
+
+  .row {
+    flex-direction: row;
+    align-items: center;
+    gap: 14;
+  }
+
+  .score {
+    color: #1c1d20;
+    font-size: 60;
+    font-weight: 700;
+  }
+
+  .score:dark {
+    color: #fafaf7;
+  }
+
+  .column {
+    flex-direction: column;
+    flex-shrink: 1;
+    gap: 2;
+  }
+
+  .verdict {
+    font-size: 26;
+    font-weight: 700;
+    color: #1c1d20;
+  }
+
+  .note {
+    color: #3a3b40;
+    font-size: 16;
+  }
+
+  .note:dark {
+    color: #c9ccd1;
+  }
+
+  .line {
+    color: #1c1d20;
+    font-size: 18;
+    line-height: 1.3;
+  }
+
+  .line:dark {
+    color: #fafaf7;
+  }
+
+  .small {
+    color: #5b5e66;
+    font-size: 15;
+  }
+
+  .small:dark {
+    color: #a9adb5;
+  }
+</style>
+<Panel id="report" class="board">
+  <div id="block-name" class="eyebrow">REPORT</div>
+  <div class="row">
+    <div id="score" class="score">100%</div>
+    <div class="column">
+      <div id="verdict" class="verdict">Followed</div>
+      <div id="verdict-note" class="note">Every rule in the plan held.</div>
+    </div>
+  </div>
+  <div class="eyebrow">DEVIATIONS</div>
+  <div id="line-0" class="line">No deviations.</div>
+  <div id="line-1" class="line">-</div>
+  <div id="line-2" class="line">-</div>
+  <div id="line-3" class="line">-</div>
+  <div id="points" class="small">All points kept.</div>
+  <div id="rules" class="small">Rules</div>
+  <div id="focus" class="small">Focus</div>
+  <Button id="again" variant="primary">
+    <ButtonLabel>Pick the next plan</ButtonLabel>
+  </Button>
+</Panel>

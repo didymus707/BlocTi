@@ -1,0 +1,95 @@
+<!--
+  One task card. The app makes up to six of these and fills them in from
+  cardViews() in src/bloc/view.ts. Sizes are UIKit units; the panel entity is
+  scaled so 300 units is 15 cm. Code addresses elements by id.
+-->
+<style>
+  .card {
+    flex-direction: column;
+    width: 300;
+    padding-top: 14;
+    padding-right: 14;
+    padding-bottom: 14;
+    padding-left: 14;
+    gap: 8;
+  }
+
+  .stripe {
+    height: 8;
+    border-radius: 4;
+    background-color: #f5d90a;
+  }
+
+  .top {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .meta {
+    color: #3a3b40;
+    font-size: 17;
+  }
+
+  .meta:dark {
+    color: #c9ccd1;
+  }
+
+  .badge {
+    color: #1c1d20;
+    font-size: 15;
+    font-weight: 700;
+    padding-top: 3;
+    padding-right: 10;
+    padding-bottom: 3;
+    padding-left: 10;
+    border-radius: 10;
+    background-color: #d8dbe0;
+  }
+
+  .title {
+    color: #1c1d20;
+    font-size: 24;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .title:dark {
+    color: #fafaf7;
+  }
+
+  .actions {
+    flex-direction: row;
+    gap: 8;
+  }
+
+  .action {
+    flex-grow: 1;
+    min-width: 60;
+  }
+
+  .action-label {
+    font-size: 17;
+  }
+</style>
+<Panel id="card" class="card">
+  <div id="stripe" class="stripe" style="display: none"></div>
+  <div class="top">
+    <div id="number" class="meta">1</div>
+    <div id="badge" class="badge">Required</div>
+    <div id="estimate" class="meta">2m</div>
+  </div>
+  <div id="title" class="title">Task title</div>
+  <div id="status" class="meta">Not started</div>
+  <div class="actions">
+    <Button id="start" class="action" variant="secondary">
+      <ButtonLabel id="start-label" class="action-label">Start</ButtonLabel>
+    </Button>
+    <Button id="done" class="action" variant="primary">
+      <ButtonLabel class="action-label">Done</ButtonLabel>
+    </Button>
+    <Button id="skip" class="action" variant="tertiary">
+      <ButtonLabel class="action-label">Skip</ButtonLabel>
+    </Button>
+  </div>
+</Panel>

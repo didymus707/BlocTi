@@ -1,0 +1,102 @@
+<!--
+  The timer, just above the block, so it stays in the middle of the view.
+  Filled in from focusView() in src/bloc/view.ts.
+-->
+<style>
+  .focus {
+    flex-direction: column;
+    width: 360;
+    padding-top: 14;
+    padding-right: 16;
+    padding-bottom: 14;
+    padding-left: 16;
+    gap: 8;
+  }
+
+  .eyebrow {
+    color: #6b5a00;
+    font-size: 15;
+    font-weight: 700;
+    letter-spacing: 1.2;
+  }
+
+  .eyebrow:dark {
+    color: #f5d90a;
+  }
+
+  .row {
+    flex-direction: row;
+    align-items: center;
+    gap: 12;
+  }
+
+  .clock {
+    color: #1c1d20;
+    font-size: 52;
+    font-weight: 700;
+  }
+
+  .clock:dark {
+    color: #fafaf7;
+  }
+
+  .column {
+    flex-direction: column;
+    flex-grow: 1;
+    flex-shrink: 1;
+    gap: 2;
+  }
+
+  .caption {
+    color: #3a3b40;
+    font-size: 16;
+    line-height: 1.2;
+  }
+
+  .caption:dark {
+    color: #c9ccd1;
+  }
+
+  .title {
+    color: #1c1d20;
+    font-size: 22;
+    font-weight: 700;
+  }
+
+  .title:dark {
+    color: #fafaf7;
+  }
+
+  .actions {
+    flex-direction: row;
+    gap: 8;
+  }
+
+  .action {
+    flex-grow: 1;
+  }
+
+  .action-label {
+    font-size: 17;
+  }
+</style>
+<Panel id="focus" class="focus">
+  <div id="block-name" class="eyebrow">BLOCK</div>
+  <div class="row">
+    <div id="clock" class="clock">00:00</div>
+    <div class="column">
+      <div id="caption" class="caption">planned for this block</div>
+      <div id="step" class="caption">0 steps</div>
+    </div>
+  </div>
+  <div id="title" class="title">Pinch Start on any card</div>
+  <ProgressBar id="progress" value="0"></ProgressBar>
+  <div id="actions" class="actions">
+    <Button id="pause" class="action" variant="secondary">
+      <ButtonLabel id="pause-label" class="action-label">Pause</ButtonLabel>
+    </Button>
+    <Button id="end" class="action" variant="tertiary">
+      <ButtonLabel class="action-label">End block</ButtonLabel>
+    </Button>
+  </div>
+</Panel>

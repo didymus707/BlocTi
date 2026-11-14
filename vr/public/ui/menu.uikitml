@@ -1,0 +1,116 @@
+<!--
+  The plan picker: three templates, no typing. Under them, the verdicts of
+  the last sessions as a row of dots and one sentence about the trend.
+  Template text comes from src/bloc/templates.ts and view.ts.
+-->
+<style>
+  .board {
+    flex-direction: column;
+    width: 440;
+    padding-top: 18;
+    padding-right: 18;
+    padding-bottom: 18;
+    padding-left: 18;
+    gap: 10;
+  }
+
+  .eyebrow {
+    color: #6b5a00;
+    font-size: 15;
+    font-weight: 700;
+    letter-spacing: 1.2;
+  }
+
+  .eyebrow:dark {
+    color: #f5d90a;
+  }
+
+  .heading {
+    color: #1c1d20;
+    font-size: 30;
+    font-weight: 700;
+  }
+
+  .heading:dark {
+    color: #fafaf7;
+  }
+
+  .choice {
+    flex-direction: column;
+    align-items: flex-start;
+    height: 72;
+    padding-left: 16;
+    padding-right: 16;
+  }
+
+  .choice-name {
+    font-size: 20;
+  }
+
+  .choice-line {
+    font-size: 15;
+  }
+
+  .dots {
+    flex-direction: row;
+    gap: 8;
+    align-items: center;
+  }
+
+  .dot {
+    width: 22;
+    height: 22;
+    border-radius: 11;
+    background-color: #5b5e66;
+  }
+
+  .body {
+    color: #3a3b40;
+    font-size: 18;
+    line-height: 1.3;
+  }
+
+  .body:dark {
+    color: #dddfe3;
+  }
+
+  .hint {
+    color: #5b5e66;
+    font-size: 15;
+  }
+
+  .hint:dark {
+    color: #a9adb5;
+  }
+</style>
+<Panel id="menu" class="board">
+  <div class="eyebrow">BLOCTI</div>
+  <div class="heading">Pick a plan</div>
+  <Button id="choice-0" class="choice" variant="secondary">
+    <ButtonLabel id="choice-0-name" class="choice-name">10-minute reset</ButtonLabel>
+    <ButtonLabelSubtext id="choice-0-line" class="choice-line">10 min</ButtonLabelSubtext>
+  </Button>
+  <Button id="choice-1" class="choice" variant="secondary">
+    <ButtonLabel id="choice-1-name" class="choice-name">25-minute deep work</ButtonLabel>
+    <ButtonLabelSubtext id="choice-1-line" class="choice-line">25 min</ButtonLabelSubtext>
+  </Button>
+  <Button id="choice-2" class="choice" variant="secondary">
+    <ButtonLabel id="choice-2-name" class="choice-name">Release checklist</ButtonLabel>
+    <ButtonLabelSubtext id="choice-2-line" class="choice-line">13 min</ButtonLabelSubtext>
+  </Button>
+  <div class="eyebrow">LAST SESSIONS</div>
+  <div class="dots">
+    <div id="dot-0" class="dot"></div>
+    <div id="dot-1" class="dot"></div>
+    <div id="dot-2" class="dot"></div>
+    <div id="dot-3" class="dot"></div>
+    <div id="dot-4" class="dot"></div>
+    <div id="dot-5" class="dot"></div>
+    <div id="dot-6" class="dot"></div>
+  </div>
+  <div id="trend" class="body">Finish a block and its verdict shows up here.</div>
+  <div id="hint" class="hint">Pinch the block and move it onto your desk.</div>
+  <Button id="enter-xr" variant="primary">
+    <ButtonLabel>Enter mixed reality</ButtonLabel>
+  </Button>
+</Panel>
