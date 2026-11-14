@@ -1,0 +1,63 @@
+# Builds the mixed-reality app in vr/ and publishes it to GitHub Pages.
+#
+# It runs when vr/ or the engine it imports from frontend/ changes on
+# `development`, or by hand from the Actions tab. Pages must be switched on
+# first: Settings > Pages > Source: GitHub Actions. The site then lives at
+# https://<owner>.github.io/<repo>/.
+name: VR app to GitHub Pages
+
+on:
+  push:
+    branches: [development]
+    paths:
+      - 'vr/**'
+      - 'frontend/src/sei/**'
+      - 'frontend/src/utils.ts'
+      - '.github/workflows/vr-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# one deploy at a time; a newer push waits rather than cancelling one mid-way
+concurrency:
+  group: vr-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vr
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: vr/.nvmrc
+          cache: npm
+          cache-dependency-path: vr/package-lock.json
+
+      # install scripts are skipped: the only ones fetch native binaries for
+      # the local docs search tool, which a static build does not need
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: vr/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
