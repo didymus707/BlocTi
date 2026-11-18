@@ -106,13 +106,6 @@ export class PlacementSystem extends createSystem({
       persistent: true,
     });
     this.block.addComponent(BlocBlock);
-    this.block.addComponent(RayInteractable);
-    // pinch and drag from where you sit; the block slides with your hand
-    this.block.addComponent(DistanceGrabbable, {
-      movementMode: MovementMode.MoveFromTarget,
-      rotate: false,
-      scale: false,
-    });
     this.block.addComponent(XRAnchor);
 
     this.layout = this.world.createTransformEntity(new Group(), {
@@ -130,13 +123,41 @@ export class PlacementSystem extends createSystem({
       () => this.xrManager.removeEventListener('sessionstart', onSessionStart),
       // let go of the block: drop it onto the desk, face you, remember it
       this.queries.heldBlocks.subscribe('disqualify', () => this.settle()),
+      // runs now and on every change between the browser view and the headset
+      this.world.visibilityState.subscribe(() => this.setGrabbable(this.inXR())),
     );
+  }
+
+  private inXR(): boolean {
+    return this.world.visibilityState.peek() !== VisibilityState.NonImmersive;
+  }
+
+  // The block can only be moved by hand in mixed reality. The flat browser
+  // view has no tracked head to turn it towards: letting go of it there
+  // turned it (and every panel with it) to face away, and the panels vanished.
+  private setGrabbable(on: boolean): void {
+    const block = this.block;
+    if (on) {
+      if (!block.hasComponent(RayInteractable)) block.addComponent(RayInteractable);
+      if (!block.hasComponent(DistanceGrabbable)) {
+        // pinch and drag from where you sit; the block slides with your hand
+        block.addComponent(DistanceGrabbable, {
+          movementMode: MovementMode.MoveFromTarget,
+          rotate: false,
+          scale: false,
+        });
+      }
+      return;
+    }
+    if (block.hasComponent(DistanceGrabbable)) block.removeComponent(DistanceGrabbable);
+    if (block.hasComponent(RayInteractable)) block.removeComponent(RayInteractable);
+    // back where the browser camera looks, facing it
+    this.setWorldPose(BROWSER_SPOT, 0);
   }
 
   update(_delta: number, time: number): void {
     this.now = time;
-    const inXR = this.world.visibilityState.peek() !== VisibilityState.NonImmersive;
-    if (inXR) {
+    if (this.inXR()) {
       if (this.sessionStartedAt < 0) this.sessionStartedAt = time;
       if (!this.placed) this.tryPlace();
       else if (time < this.snapUntil && time >= this.nextSnapAt) {
@@ -191,6 +212,7 @@ export class PlacementSystem extends createSystem({
   }
 
   private settle(): void {
+    if (!this.inXR()) return;
     this.snapToSurface();
     this.faceViewer();
     this.snapUntil = 0;
